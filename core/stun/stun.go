@@ -1,160 +1,70 @@
 package netcheck
 
 import (
-	"bytes"
-	"encoding/binary"
+	"errors"
 	"math/rand"
 	"net"
-	"time"
-	"unsafe"
+	"net/netip"
+	"sync"
 )
 
-func buildRequestPacket(transactionID []byte, action ChangeRequestAction) []byte {
-	var (
-		req  = STUNRequestPacket{}
-		buff = make([]byte, 1024)
-	)
-
-	// set the message type
-	binary.BigEndian.PutUint16(buff, STUNBindingRequest)
-	copy(req.MessageType[:], buff)
-
-	// set the message length
-	if action != NoAction {
-		binary.BigEndian.PutUint16(buff, 8)
-	} else {
-		binary.BigEndian.PutUint16(buff, 0)
+var (
+	STUNServers = []string{
+		"stun.syncthing.net",
+		"stun.qq.com",
+		"stun.miwifi.com",
+		"stun.bige0.com",
+		"stun.stunprotocol.org",
 	}
-	copy(req.MessageLength[:], buff)
+)
 
-	// set a magic cookie to be compatible with RFC3489
-	binary.BigEndian.PutUint32(buff, STUNMagicCookie)
-	copy(req.MagicCookie[:], buff)
-
-	// set the TransactionID
-	if len(transactionID) != 12 {
-		return nil
-	} else {
-		copy(req.TransactionID[:], transactionID)
+func Endpoint(udp *net.UDPConn) (netip.AddrPort, error) {
+	addr, err := net.ResolveIPAddr("ip", STUNServers[rand.Int31n(int32(len(STUNServers)))])
+	if err != nil {
+		return netip.AddrPort{}, err
 	}
-
-	// convert a structure to a byte array
-	*(*STUNRequestPacket)(unsafe.Pointer(&buff[0])) = req
-	offset := unsafe.Sizeof(STUNRequestPacket{})
-
-	switch action {
-	case ChangePort:
-		// set ChangeRequest
-		binary.BigEndian.PutUint16(buff[offset:offset+2], uint16(ChangeRequest))
-		offset += 2
-
-		binary.BigEndian.PutUint16(buff[offset:offset+2], 4)
-		offset += 2
-
-		binary.BigEndian.PutUint32(buff[offset:offset+4], uint32(ChangePort))
-		offset += 4
-		return buff[:offset]
-	case ChangeIPAndPort:
-		// set ChangeRequest
-		binary.BigEndian.PutUint16(buff[offset:offset+2], uint16(ChangeRequest))
-		offset += 2
-
-		binary.BigEndian.PutUint16(buff[offset:offset+2], 4)
-		offset += 2
-
-		binary.BigEndian.PutUint32(buff[offset:offset+4], uint32(ChangeIPAndPort))
-		offset += 4
-		return buff[:offset]
-	default:
-		return buff[:offset]
+	remoteAddr := &net.UDPAddr{IP: addr.IP, Port: DefaultSTUNPort}
+	resp, err := sendAndRecv(udp, NoAction, remoteAddr)
+	if err != nil {
+		return netip.AddrPort{}, err
 	}
+	endpoint := resp.Attributes[MappedAddress]
+	return netip.AddrPortFrom(netip.MustParseAddr(endpoint.IP.String()), uint16(endpoint.Port)), nil
 }
 
-func parseResponsePacket(buff []byte) *STUNResponse {
-	var (
-		resp   = &STUNResponse{Attributes: map[AttributeType]Attribute{}}
-		offset = 0
-	)
+func IsSymmetric(udp *net.UDPConn) (bool, error) {
+	wg := sync.WaitGroup{}
+	result := make(chan netip.AddrPort, len(STUNServers))
+	wg.Add(len(STUNServers))
+	for _, server := range STUNServers {
+		go func(server string) {
+			defer wg.Done()
 
-	// set the MessageType
-	if binary.BigEndian.Uint16(buff[offset:offset+2]) == STUNBindingResponse {
-		resp.MessageType = STUNBindingResponse
-	}
-	offset += 2
-
-	// set the MessageLength
-	resp.MessageLength = int(binary.BigEndian.Uint16(buff[offset : offset+2]))
-	offset += 2
-
-	// set the MagicCookie
-	resp.MagicCookie = binary.BigEndian.Uint32(buff[offset : offset+4])
-	offset += 4
-
-	// set the TransactionID
-	resp.TransactionID = make([]byte, 12)
-	copy(resp.TransactionID, buff[offset:offset+12])
-	offset += 12
-
-	for i := 0; i < resp.MessageLength; i += AttributeSize {
-		attribute := Attribute{}
-
-		// set AttributeType
-		attribute.Type = AttributeType(binary.BigEndian.Uint16(buff[offset : offset+2]))
-		offset += 2
-
-		// set AttributeLength
-		attribute.Length = int(binary.BigEndian.Uint16(buff[offset : offset+2]))
-		offset += 2
-
-		// set AttributeReserved
-		attribute.Reserved = int(buff[offset])
-		offset += 1
-
-		// set ProtocolFamily
-		attribute.ProtocolFamily = ProtocolFamily(buff[offset])
-		offset += 1
-
-		// set Port
-		attribute.Port = int(binary.BigEndian.Uint16(buff[offset : offset+2]))
-		offset += 2
-
-		// set IP
-		attribute.IP = net.IPv4(buff[offset], buff[offset+1], buff[offset+2], buff[offset+3])
-		offset += 4
-
-		resp.Attributes[attribute.Type] = attribute
+			addr, err := net.ResolveIPAddr("ip", server)
+			if err != nil {
+				return
+			}
+			remoteAddr := &net.UDPAddr{IP: addr.IP, Port: DefaultSTUNPort}
+			resp, err := sendAndRecv(udp, NoAction, remoteAddr)
+			if err != nil {
+				return
+			}
+			endpoint := resp.Attributes[MappedAddress]
+			result <- netip.AddrPortFrom(netip.MustParseAddr(endpoint.IP.String()), uint16(endpoint.Port))
+		}(server)
 	}
 
-	return resp
-}
-
-func sendAndRecv(udp *net.UDPConn, action ChangeRequestAction, remote *net.UDPAddr) (*STUNResponse, error) {
-	buff := make([]byte, 1024)
-
-	transactionID := make([]byte, 12)
-	// set the TransactionID
-	for i := 0; i < 12; i++ {
-		transactionID[i] = byte(rand.Int())
+	wg.Wait()
+	ep := make(map[netip.AddrPort]struct{})
+	count := 0
+	for value := range result {
+		ep[value] = struct{}{}
+		count++
 	}
 
-	_, err := udp.WriteToUDP(buildRequestPacket(transactionID, action), remote)
-	if err != nil {
-		return nil, err
-	}
-	udp.SetReadDeadline(time.Now().Add(ReadTimeout))
-	n, _, err := udp.ReadFromUDP(buff)
-	if err != nil {
-		netErr, ok := err.(*net.OpError)
-		if ok && netErr.Timeout() {
-			return nil, nil
-		} else {
-			return nil, err
-		}
+	if count == 0 {
+		return false, errors.New("stun request failed")
 	} else {
-		resp := parseResponsePacket(buff[:n])
-		if !bytes.Equal(resp.TransactionID, transactionID) {
-			return nil, nil
-		}
-		return resp, nil
+		return count > 1, nil
 	}
 }

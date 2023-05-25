@@ -17,12 +17,12 @@ func NewUDPConn(addr netip.AddrPort) (*UdpConn, error) {
 	return &UdpConn{conn: udp}, nil
 }
 
-func (u *UdpConn) WriteTo(buff []byte, addr net.Addr) (int, error) {
-	return u.conn.WriteTo(buff, addr)
+func (u *UdpConn) WriteTo(buff []byte, addr netip.AddrPort) (int, error) {
+	return u.conn.WriteToUDPAddrPort(buff, addr)
 }
 
-func (u *UdpConn) ReadFrom(buff []byte) (int, net.Addr, error) {
-	return u.conn.ReadFrom(buff)
+func (u *UdpConn) ReadFrom(buff []byte) (int, netip.AddrPort, error) {
+	return u.conn.ReadFromUDPAddrPort(buff)
 }
 
 func (u *UdpConn) Close() error {

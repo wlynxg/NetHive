@@ -1,8 +1,10 @@
 package device
 
 import (
+	"NetHive/pkgs/command"
 	"bytes"
 	"fmt"
+	"net/netip"
 	"os"
 	"sync"
 	"syscall"
@@ -70,6 +72,10 @@ func (t *tun) Name() (string, error) {
 		return t.getNameFromSys()
 	}
 	return t.name, nil
+}
+
+func (t *tun) AddAddress(addr netip.Addr) error {
+	return command.IPAddr(addr, t.name)
 }
 
 func (t *tun) getNameFromSys() (string, error) {

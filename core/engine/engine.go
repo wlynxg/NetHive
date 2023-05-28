@@ -2,9 +2,13 @@ package engine
 
 import (
 	"NetHive/core/conn"
+	"NetHive/core/control"
 	"NetHive/core/device"
+	"NetHive/core/info"
+	"context"
 	"fmt"
 	"net/netip"
+	"time"
 )
 
 const (
@@ -12,24 +16,36 @@ const (
 )
 
 type Engine struct {
-	option     Option
-	device     device.Device
-	udpConn    *conn.UdpConn
+	ctx    context.Context
+	option Option
+	// tun device
+	device device.Device
+	// udp conn
+	udpConn *conn.UdpConn
+	// control
+	control *control.Client
+
 	devWriter  chan Payload
 	connWriter chan Payload
 	errChan    chan error
 }
 
 func (e *Engine) Start() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	e.ctx = ctx
+	defer cancel()
+
+	opt := e.option
+
 	// create tun
-	tun, err := device.CreateTUN(e.option.Device.TUNName, e.option.Device.MTU)
+	tun, err := device.CreateTUN(opt.Device.TUNName, opt.Device.MTU)
 	if err != nil {
 		return err
 	}
 	e.device = tun
 
 	// create udp connection
-	addr, err := netip.ParseAddrPort(e.option.UDPAddr)
+	addr, err := netip.ParseAddrPort(opt.UDPAddr)
 	if err != nil {
 		return err
 	}
@@ -39,6 +55,8 @@ func (e *Engine) Start() error {
 	}
 	e.udpConn = udpConn
 
+	e.control = control.New(opt.Server)
+
 	e.devWriter = make(chan Payload, 100)
 	e.connWriter = make(chan Payload, 100)
 
@@ -46,6 +64,7 @@ func (e *Engine) Start() error {
 	go e.RoutineTUNWriter()
 	go e.RoutineConnReader()
 	go e.RoutineConnWriter()
+	go e.RoutineConnect()
 
 	if err := <-e.errChan; err != nil {
 		return err
@@ -120,4 +139,27 @@ func (e *Engine) RoutineConnWriter() {
 			return
 		}
 	}
+}
+
+func (e *Engine) RoutineConnect() {
+	var (
+		nodes []info.NodeInfo
+		err   error
+	)
+
+	interval := e.option.Interval
+	timer := time.NewTimer(interval)
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-timer.C:
+			nodes, err = e.control.Connect(e.ctx, *info.New())
+			if err != nil {
+				return
+			}
+			fmt.Printf("%+v\n", nodes)
+		}
+	}
+
 }

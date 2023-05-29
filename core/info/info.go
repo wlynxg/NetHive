@@ -11,6 +11,8 @@ type NodeInfo struct {
 	Hostname  string
 	OS        string
 	Arch      string
+
+	Address netip.Prefix
 }
 
 func New() *NodeInfo {

@@ -143,8 +143,8 @@ func (e *Engine) RoutineConnWriter() {
 
 func (e *Engine) RoutineConnect() {
 	var (
-		nodes []info.NodeInfo
-		err   error
+		res *control.ConnectRes
+		err error
 	)
 
 	interval := e.option.Interval
@@ -154,11 +154,11 @@ func (e *Engine) RoutineConnect() {
 		case <-e.ctx.Done():
 			return
 		case <-timer.C:
-			nodes, err = e.control.Connect(e.ctx, *info.New())
+			res, err = e.control.Connect(e.ctx, *info.New())
 			if err != nil {
 				return
 			}
-			fmt.Printf("%+v\n", nodes)
+			fmt.Printf("%+v\n", res)
 		}
 	}
 

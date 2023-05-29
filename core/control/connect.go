@@ -13,24 +13,27 @@ type ConnectReq struct {
 }
 
 type ConnectRes struct {
+	// local node information
+	Node info.NodeInfo
+	// others node information
 	Nodes []info.NodeInfo
 }
 
-func (c *Client) Connect(ctx context.Context, req info.NodeInfo) ([]info.NodeInfo, error) {
+func (c *Client) Connect(ctx context.Context, req info.NodeInfo) (*ConnectRes, error) {
 	path, err := url.JoinPath(c.server, ConnectURL)
 	if err != nil {
 		return nil, err
 	}
 
-	var nodes []info.NodeInfo
+	var res *ConnectRes
 	response, err := c.client.Post(ctx, path, req)
 	if err != nil {
 		return nil, err
 	}
 
-	err = gconv.Scan(response.ReadAll(), &nodes)
+	err = gconv.Scan(response.ReadAll(), &res)
 	if err != nil {
 		return nil, err
 	}
-	return nodes, nil
+	return res, nil
 }

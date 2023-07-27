@@ -25,6 +25,14 @@ type Engine struct {
 	errChan    chan error
 }
 
+func New(opt *Option) (*Engine, error) {
+	var (
+		e = new(Engine)
+	)
+
+	return e, nil
+}
+
 func (e *Engine) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.ctx = ctx

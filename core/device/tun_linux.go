@@ -74,8 +74,12 @@ func (t *tun) Name() (string, error) {
 	return t.name, nil
 }
 
-func (t *tun) AddAddress(addr netip.Addr) error {
-	return command.IPAddr(addr, t.name)
+func (t *tun) AddAddress(addr netip.Prefix) error {
+	return command.IP4AddAddr(addr, t.name)
+}
+
+func (t *tun) FlushAddress() error {
+	return command.IP4FlushAddr(t.name)
 }
 
 func (t *tun) getNameFromSys() (string, error) {

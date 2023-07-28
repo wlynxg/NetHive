@@ -1,13 +1,16 @@
 package engine
 
-import "time"
+import (
+	"net/netip"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+)
 
 type Option struct {
 	Device struct {
 		TUNName string
 		MTU     int
 	}
-	UDPAddr  string
-	Server   string
-	Interval time.Duration
+	PeersRouteTable map[peer.ID][]netip.Prefix
+	LocalRoute      []netip.Prefix
 }

@@ -4,5 +4,5 @@ import "net/netip"
 
 type Payload struct {
 	Data []byte
-	Addr netip.AddrPort
+	Addr netip.Addr
 }

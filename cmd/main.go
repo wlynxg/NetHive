@@ -24,11 +24,11 @@ func main() {
 	opt := engine.Option{
 		TUNName:    "nethive0",
 		MTU:        1500,
-		LocalAddr:  netip.MustParsePrefix("100.0.0.1/32"),
+		LocalAddr:  netip.MustParsePrefix("192.168.199.1/32"),
 		PrivateKey: key,
 		PeersRouteTable: map[peer.ID][]netip.Prefix{
-			"12D3KooWFDbzFGc89W8ZbaedTVcD4YgGMaKzTa3kw9hcZrBUrdZt": {netip.MustParsePrefix("100.0.0.1/32")},
-			"12D3KooWLYUNghjWRUXBrdLqP2E7qky8r6GzJ74sJS4ZXn7cddJF": {netip.MustParsePrefix("100.0.0.2/32")},
+			"12D3KooWFDbzFGc89W8ZbaedTVcD4YgGMaKzTa3kw9hcZrBUrdZt": {netip.MustParsePrefix("192.168.199.1/32")},
+			"12D3KooWLYUNghjWRUXBrdLqP2E7qky8r6GzJ74sJS4ZXn7cddJF": {netip.MustParsePrefix("192.168.199.2/32")},
 		},
 	}
 

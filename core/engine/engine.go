@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 )
 
 const (
@@ -22,10 +23,12 @@ const (
 	VPNStreamProtocol = "/NetHive/vpn"
 )
 
+type PacketChan chan Payload
+
 type Engine struct {
 	log *glog.Logger
 	ctx context.Context
-	opt Option
+	opt *Option
 	// tun device
 	device device.Device
 
@@ -35,13 +38,13 @@ type Engine struct {
 
 	relayChan chan peer.AddrInfo
 
-	devWriter chan Payload
-	devReader chan Payload
+	devWriter PacketChan
+	devReader PacketChan
 	errChan   chan error
 
 	routeTable struct {
 		sync.RWMutex
-		m map[netip.Prefix]chan []byte
+		m map[netip.Prefix]PacketChan
 	}
 }
 
@@ -49,6 +52,7 @@ func New(opt *Option) (*Engine, error) {
 	var (
 		e = new(Engine)
 	)
+	e.opt = opt
 
 	return e, nil
 }
@@ -61,14 +65,18 @@ func (e *Engine) Start() error {
 	opt := e.opt
 
 	// create tun
-	tun, err := device.CreateTUN(opt.Device.TUNName, opt.Device.MTU)
+	tun, err := device.CreateTUN(opt.TUNName, opt.MTU)
 	if err != nil {
 		return err
 	}
 	e.device = tun
+	err = tun.AddAddress(opt.LocalAddr)
+	if err != nil {
+		return err
+	}
 
-	e.devWriter = make(chan Payload, ChanSize)
-	e.devReader = make(chan Payload, ChanSize)
+	e.devWriter = make(PacketChan, ChanSize)
+	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
 
 	node, err := libp2p.New(libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }))
@@ -76,18 +84,20 @@ func (e *Engine) Start() error {
 		return err
 	}
 	e.host = node
+	e.log.Infof(e.ctx, "host ID: %s", node.ID().String())
 
 	e.dht, err = dht.New(e.ctx, e.host)
 	if err != nil {
 		return err
 	}
 	e.discovery = routing.NewRoutingDiscovery(e.dht)
-	e.routeTable.m = make(map[netip.Prefix]chan []byte)
+	e.routeTable.m = make(map[netip.Prefix]PacketChan)
+	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
 
 	wg := sync.WaitGroup{}
 	errChan := make(chan error, len(opt.PeersRouteTable))
 	for id, prefixes := range opt.PeersRouteTable {
-		peerChan := make(chan []byte, ChanSize)
+		peerChan := make(chan Payload, ChanSize)
 		e.routeTable.Lock()
 		for _, prefix := range prefixes {
 			e.routeTable.m[prefix] = peerChan
@@ -96,6 +106,7 @@ func (e *Engine) Start() error {
 
 		wg.Add(1)
 		id := id
+		dev := &devWrapper{r: e.devWriter, w: peerChan}
 		go func() {
 			peers, err := e.discovery.FindPeers(e.ctx, string(id))
 			if err != nil {
@@ -111,12 +122,22 @@ func (e *Engine) Start() error {
 				if err != nil {
 					errChan <- err
 				}
+				e.log.Infof(e.ctx, "Peer [%s] connect success")
 
-				// TODO: 封装 channel
 				go func() {
-					io.Copy(stream, nil)
+					_, err := io.Copy(stream, dev)
+					if err != nil && err != io.EOF {
+						e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", info.ID, err)
+					}
 				}()
-				io.Copy(nil, stream)
+				_, err = io.Copy(dev, stream)
+				if err != nil && err != io.EOF {
+					e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", info.ID, err)
+					stream.Close()
+					return
+				}
+				stream.Close()
+				return
 			}
 		}()
 	}
@@ -174,7 +195,7 @@ chooseRoute:
 		// TODO: 增加缓存机制
 		for prefix, c := range e.routeTable.m {
 			if prefix.Contains(payload.Addr) {
-				c <- payload.Data
+				c <- payload
 				continue chooseRoute
 			}
 		}

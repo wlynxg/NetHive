@@ -63,6 +63,7 @@ func (e *Engine) Start() error {
 	defer cancel()
 
 	opt := e.opt
+	e.log = glog.New()
 
 	// create tun
 	tun, err := device.CreateTUN(opt.TUNName, opt.MTU)

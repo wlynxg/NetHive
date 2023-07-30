@@ -80,7 +80,10 @@ func (e *Engine) Start() error {
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
 
-	node, err := libp2p.New(libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }))
+	node, err := libp2p.New(
+		libp2p.Identity(opt.PrivateKey),
+		libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }),
+	)
 	if err != nil {
 		return err
 	}

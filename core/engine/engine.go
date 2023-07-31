@@ -183,7 +183,7 @@ func (e *Engine) RoutineTUNReader() {
 		}
 		ip, err := protocol.ParseIP(buff[:n])
 		if err != nil {
-			e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet, because %s", err)
+			e.log.Warningf(e.ctx, "[RoutineTUNReader] drop packet, because %s", err)
 			continue
 		}
 		payload := Payload{

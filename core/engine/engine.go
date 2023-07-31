@@ -105,6 +105,19 @@ func (e *Engine) Start() error {
 		return err
 	}
 
+	wg := sync.WaitGroup{}
+	for _, info := range dht.GetDefaultBootstrapPeerAddrInfos() {
+		info := info
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := e.host.Connect(e.ctx, info); err != nil {
+				e.log.Warningf(e.ctx, "connection %s fails, because of error :%s", info.String(), err)
+			}
+		}()
+	}
+	wg.Wait()
+
 	e.host.SetStreamHandler(VPNStreamProtocol, func(stream network.Stream) {
 		e.routeTable.Lock()
 		id := peer.ID(stream.ID())

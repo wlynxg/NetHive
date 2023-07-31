@@ -138,6 +138,7 @@ func (e *Engine) Start() error {
 		for _, prefix := range prefixs {
 			e.routeTable.prefix[prefix] = id
 		}
+		e.routeTable.Unlock()
 
 		dev := &devWrapper{w: e.devWriter, r: peerChan}
 		go func() {
@@ -189,7 +190,6 @@ func (e *Engine) RoutineTUNReader() {
 			Dst: ip.Dst(),
 		}
 		copy(payload.Data, buff[:n])
-		fmt.Println(payload.Dst)
 		select {
 		case e.devReader <- payload:
 		default:
@@ -219,6 +219,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 	)
 
 	for payload = range e.devReader {
+		fmt.Println(payload.Dst)
 		var conn PacketChan
 		e.routeTable.RLock()
 		c, ok := e.routeTable.addr[payload.Dst]
@@ -245,6 +246,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 	e.log.Debugf(e.ctx, "Try to connect to the corresponding node of %s", dst)
 	e.routeTable.Lock()
+	defer e.routeTable.Unlock()
 	for prefix, id := range e.routeTable.prefix {
 		if prefix.Contains(dst) {
 			if conn, ok := e.routeTable.id[id]; ok {

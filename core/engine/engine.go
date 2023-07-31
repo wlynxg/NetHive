@@ -2,6 +2,7 @@ package engine
 
 import (
 	"NetHive/core/device"
+	"NetHive/core/protocol"
 	"context"
 	"errors"
 	"fmt"
@@ -149,10 +150,9 @@ func (e *Engine) Start() error {
 
 func (e *Engine) RoutineTUNReader() {
 	var (
-		payload Payload
-		buff    = make([]byte, BuffSize)
-		err     error
-		n       int
+		buff = make([]byte, BuffSize)
+		err  error
+		n    int
 	)
 	for {
 		n, err = e.device.Read(buff)
@@ -161,8 +161,22 @@ func (e *Engine) RoutineTUNReader() {
 			return
 		}
 		fmt.Println(buff[:n])
+
+		ip, err := protocol.ParseIP(buff[:n])
+		if err != nil {
+			e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet, because %s", err)
+			continue
+		}
+		payload := Payload{
+			Src: ip.Src(),
+			Dst: ip.Dst(),
+		}
 		copy(payload.Data, buff[:n])
-		e.devReader <- payload
+		select {
+		case e.devReader <- payload:
+		default:
+			e.log.Warningf(e.ctx, "[RoutineTUNReader] drop packet: %s, because the sending queue is already full", payload.Dst)
+		}
 	}
 }
 
@@ -189,13 +203,13 @@ func (e *Engine) RoutineRouteTableWriter() {
 	for payload = range e.devReader {
 		e.routeTable.Lock()
 		var conn PacketChan
-		c, ok := e.routeTable.addr[payload.Addr]
+		c, ok := e.routeTable.addr[payload.Dst]
 		if ok {
 			conn = c
 		} else {
-			c, err := e.addConn(payload.Addr)
+			c, err := e.addConn(payload.Dst)
 			if err != nil {
-				e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Addr, err)
+				e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)
 				e.routeTable.Unlock()
 				continue
 			}
@@ -206,7 +220,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 		select {
 		case conn <- payload:
 		default:
-			e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Addr)
+			e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
 		}
 	}
 }

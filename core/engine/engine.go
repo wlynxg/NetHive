@@ -46,8 +46,11 @@ type Engine struct {
 
 	routeTable struct {
 		sync.RWMutex
-		m map[netip.Prefix]peer.ID
-		c map[netip.Addr]PacketChan
+
+		m      map[peer.ID][]netip.Prefix
+		prefix map[netip.Prefix]peer.ID
+		id     map[peer.ID]PacketChan
+		addr   map[netip.Addr]PacketChan
 	}
 }
 
@@ -82,8 +85,11 @@ func (e *Engine) Start() error {
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
-	e.routeTable.m = make(map[netip.Prefix]peer.ID)
-	e.routeTable.c = make(map[netip.Addr]PacketChan)
+
+	e.routeTable.m = opt.PeersRouteTable
+	e.routeTable.prefix = make(map[netip.Prefix]peer.ID)
+	e.routeTable.id = make(map[peer.ID]PacketChan)
+	e.routeTable.addr = make(map[netip.Addr]PacketChan)
 
 	node, err := libp2p.New(
 		libp2p.Identity(opt.PrivateKey),
@@ -95,35 +101,35 @@ func (e *Engine) Start() error {
 	e.host = node
 	e.log.Infof(e.ctx, "host ID: %s", node.ID().String())
 	node.SetStreamHandler(VPNStreamProtocol, func(stream network.Stream) {
-		buff := make([]byte, 16)
-		n, err := stream.Read(buff)
-		if err != nil {
-			return
-		}
-		dst, ok := netip.AddrFromSlice(buff[:n])
+		e.routeTable.Lock()
+		id := peer.ID(stream.ID())
+		prefixs, ok := e.routeTable.m[id]
 		if !ok {
 			stream.Close()
 			return
 		}
 
-		flag := false
-		e.routeTable.RLock()
-		for route, id := range e.routeTable.m {
-			if route.Contains(dst) && id.String() == stream.ID() {
-				flag = true
-				break
+		peerChan := make(PacketChan, ChanSize)
+		e.routeTable.id[id] = peerChan
+		for _, prefix := range prefixs {
+			e.routeTable.prefix[prefix] = id
+		}
+
+		dev := &devWrapper{w: e.devWriter, r: peerChan}
+		go func() {
+			_, err := io.Copy(stream, dev)
+			if err != nil && err != io.EOF {
+				e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", id, err)
+				stream.Close()
+				return
 			}
+		}()
+		_, err = io.Copy(dev, stream)
+		if err != nil && err != io.EOF {
+			e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", id, err)
 		}
-
-		if !flag {
-			stream.Close()
-			return
-		}
-
-		peerChan := make(chan Payload, ChanSize)
-		e.routeTable.c[dst] = peerChan
-		dev := &devWrapper{r: e.devWriter, w: peerChan}
-		io.Copy(stream, dev)
+		stream.Close()
+		return
 	})
 
 	e.dht, err = dht.New(e.ctx, e.host)
@@ -132,14 +138,6 @@ func (e *Engine) Start() error {
 	}
 	e.discovery = routing.NewRoutingDiscovery(e.dht)
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
-
-	e.routeTable.Lock()
-	for id, prefixes := range opt.PeersRouteTable {
-		for _, prefix := range prefixes {
-			e.routeTable.m[prefix] = id
-		}
-	}
-	e.routeTable.Unlock()
 
 	go e.RoutineTUNReader()
 	go e.RoutineTUNWriter()
@@ -191,7 +189,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 	for payload = range e.devReader {
 		e.routeTable.Lock()
 		var conn PacketChan
-		c, ok := e.routeTable.c[payload.Addr]
+		c, ok := e.routeTable.addr[payload.Addr]
 		if ok {
 			conn = c
 		} else {
@@ -215,45 +213,49 @@ func (e *Engine) RoutineRouteTableWriter() {
 
 func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 	e.routeTable.Lock()
-	for prefix, id := range e.routeTable.m {
+	for prefix, id := range e.routeTable.prefix {
 		if prefix.Contains(dst) {
-			peerChan := make(chan Payload, ChanSize)
-			e.routeTable.c[dst] = peerChan
-			dev := &devWrapper{r: e.devWriter, w: peerChan}
-			go func() {
-				peers, err := e.discovery.FindPeers(e.ctx, string(id))
-				if err != nil {
-					e.errChan <- err
-				}
-
-				for info := range peers {
-					if info.ID != id || len(info.Addrs) <= 0 {
-						continue
-					}
-
-					stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
+			if conn, ok := e.routeTable.id[id]; ok {
+				return conn, nil
+			} else {
+				peerChan := make(chan Payload, ChanSize)
+				e.routeTable.addr[dst] = peerChan
+				dev := &devWrapper{w: e.devWriter, r: peerChan}
+				go func() {
+					peers, err := e.discovery.FindPeers(e.ctx, string(id))
 					if err != nil {
 						e.errChan <- err
 					}
-					e.log.Infof(e.ctx, "Peer [%s] connect success")
 
-					go func() {
-						_, err := io.Copy(stream, dev)
-						if err != nil && err != io.EOF {
-							e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", info.ID, err)
+					for info := range peers {
+						if info.ID != id || len(info.Addrs) <= 0 {
+							continue
 						}
-					}()
-					_, err = io.Copy(dev, stream)
-					if err != nil && err != io.EOF {
-						e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", info.ID, err)
+
+						stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
+						if err != nil {
+							e.errChan <- err
+						}
+						e.log.Infof(e.ctx, "Peer [%s] connect success")
+
+						go func() {
+							_, err := io.Copy(stream, dev)
+							if err != nil && err != io.EOF {
+								e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", info.ID, err)
+							}
+						}()
+						_, err = io.Copy(dev, stream)
+						if err != nil && err != io.EOF {
+							e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", info.ID, err)
+							stream.Close()
+							return
+						}
 						stream.Close()
 						return
 					}
-					stream.Close()
-					return
-				}
-			}()
-			return peerChan, nil
+				}()
+				return peerChan, nil
+			}
 		}
 	}
 	return nil, errors.New(fmt.Sprintf("unknown dst addr: %s", dst.String()))

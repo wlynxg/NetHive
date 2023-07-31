@@ -59,6 +59,27 @@ func New(opt *Option) (*Engine, error) {
 		e = new(Engine)
 	)
 	e.opt = opt
+	e.devWriter = make(PacketChan, ChanSize)
+	e.devReader = make(PacketChan, ChanSize)
+	e.relayChan = make(chan peer.AddrInfo, ChanSize)
+	e.routeTable.m = opt.PeersRouteTable
+	e.routeTable.prefix = make(map[netip.Prefix]peer.ID)
+	e.routeTable.id = make(map[peer.ID]PacketChan)
+	e.routeTable.addr = make(map[netip.Addr]PacketChan)
+	node, err := libp2p.New(
+		libp2p.Identity(opt.PrivateKey),
+		libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }),
+	)
+	if err != nil {
+		return nil, err
+	}
+	e.host = node
+	e.log.Infof(e.ctx, "host ID: %s", node.ID().String())
+	e.dht, err = dht.New(e.ctx, e.host)
+	if err != nil {
+		return nil, err
+	}
+	e.discovery = routing.NewRoutingDiscovery(e.dht)
 
 	return e, nil
 }
@@ -82,25 +103,7 @@ func (e *Engine) Start() error {
 		return err
 	}
 
-	e.devWriter = make(PacketChan, ChanSize)
-	e.devReader = make(PacketChan, ChanSize)
-	e.relayChan = make(chan peer.AddrInfo, ChanSize)
-
-	e.routeTable.m = opt.PeersRouteTable
-	e.routeTable.prefix = make(map[netip.Prefix]peer.ID)
-	e.routeTable.id = make(map[peer.ID]PacketChan)
-	e.routeTable.addr = make(map[netip.Addr]PacketChan)
-
-	node, err := libp2p.New(
-		libp2p.Identity(opt.PrivateKey),
-		libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }),
-	)
-	if err != nil {
-		return err
-	}
-	e.host = node
-	e.log.Infof(e.ctx, "host ID: %s", node.ID().String())
-	node.SetStreamHandler(VPNStreamProtocol, func(stream network.Stream) {
+	e.host.SetStreamHandler(VPNStreamProtocol, func(stream network.Stream) {
 		e.routeTable.Lock()
 		id := peer.ID(stream.ID())
 		prefixs, ok := e.routeTable.m[id]
@@ -132,11 +135,6 @@ func (e *Engine) Start() error {
 		return
 	})
 
-	e.dht, err = dht.New(e.ctx, e.host)
-	if err != nil {
-		return err
-	}
-	e.discovery = routing.NewRoutingDiscovery(e.dht)
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
 
 	go e.RoutineTUNReader()
@@ -161,6 +159,7 @@ func (e *Engine) RoutineTUNReader() {
 			e.errChan <- fmt.Errorf("[RoutineTUNReader]: %s", err)
 			return
 		}
+		fmt.Println(buff[:n])
 		copy(payload.Data, buff[:n])
 		e.devReader <- payload
 	}

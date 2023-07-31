@@ -160,8 +160,6 @@ func (e *Engine) RoutineTUNReader() {
 			e.errChan <- fmt.Errorf("[RoutineTUNReader]: %s", err)
 			return
 		}
-		fmt.Println(buff[:n])
-
 		ip, err := protocol.ParseIP(buff[:n])
 		if err != nil {
 			e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet, because %s", err)
@@ -172,6 +170,7 @@ func (e *Engine) RoutineTUNReader() {
 			Dst: ip.Dst(),
 		}
 		copy(payload.Data, buff[:n])
+		fmt.Println(payload.Dst)
 		select {
 		case e.devReader <- payload:
 		default:

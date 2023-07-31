@@ -25,7 +25,7 @@ func ParseIP(buff []byte) (IP, error) {
 func ParseIPv4(buff []byte) (*IPv4, error) {
 	headerLength := (buff[0] & 0xF0) * 5
 	src := netip.AddrFrom4([4]byte{buff[12], buff[13], buff[14], buff[15]})
-	dst := netip.AddrFrom4([4]byte{buff[15], buff[16], buff[17], buff[18]})
+	dst := netip.AddrFrom4([4]byte{buff[16], buff[17], buff[18], buff[19]})
 
 	return &IPv4{
 		headerLength: int(headerLength),

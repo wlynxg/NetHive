@@ -256,7 +256,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 				go func() {
 					peers, err := e.discovery.FindPeers(e.ctx, string(id))
 					if err != nil {
-						e.errChan <- err
+						e.log.Warningf(e.ctx, "Finding node %s failed because %s", id, err)
 					}
 
 					for info := range peers {
@@ -266,7 +266,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 
 						stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 						if err != nil {
-							e.errChan <- err
+							e.log.Warningf(e.ctx, "Connection establishment with node %s failed due to %s", info, err)
 						}
 						e.log.Infof(e.ctx, "Peer [%s] connect success")
 

@@ -24,8 +24,16 @@ func ParseIP(buff []byte) (IP, error) {
 
 func ParseIPv4(buff []byte) (*IPv4, error) {
 	headerLength := (buff[0] & 0xF0) * 5
-	src := netip.AddrFrom4([4]byte{buff[12], buff[13], buff[14], buff[15]})
-	dst := netip.AddrFrom4([4]byte{buff[16], buff[17], buff[18], buff[19]})
+
+	src, ok := netip.AddrFromSlice(buff[12:16])
+	if !ok || src.IsValid() {
+		return nil, errors.New("invalid IP packet")
+	}
+
+	dst, ok := netip.AddrFromSlice(buff[16:20])
+	if !ok || dst.IsValid() {
+		return nil, errors.New("invalid IP packet")
+	}
 
 	return &IPv4{
 		headerLength: int(headerLength),

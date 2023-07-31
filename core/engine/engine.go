@@ -161,6 +161,7 @@ func (e *Engine) Start() error {
 
 	go e.RoutineTUNReader()
 	go e.RoutineTUNWriter()
+	go e.RoutineRouteTableWriter()
 
 	if err := <-e.errChan; err != nil {
 		return err

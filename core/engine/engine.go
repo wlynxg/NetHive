@@ -28,9 +28,10 @@ const (
 type PacketChan chan Payload
 
 type Engine struct {
-	log *glog.Logger
-	ctx context.Context
-	opt *Option
+	log    *glog.Logger
+	ctx    context.Context
+	cancel context.CancelFunc
+	opt    *Option
 	// tun device
 	device device.Device
 
@@ -58,7 +59,11 @@ func New(opt *Option) (*Engine, error) {
 	var (
 		e = new(Engine)
 	)
+	e.log = glog.New()
 	e.opt = opt
+	ctx, cancel := context.WithCancel(context.Background())
+	e.ctx = ctx
+	e.cancel = cancel
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
@@ -85,12 +90,8 @@ func New(opt *Option) (*Engine, error) {
 }
 
 func (e *Engine) Start() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	e.ctx = ctx
-	defer cancel()
-
+	defer e.cancel()
 	opt := e.opt
-	e.log = glog.New()
 
 	// create tun
 	tun, err := device.CreateTUN(opt.TUNName, opt.MTU)

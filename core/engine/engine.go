@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/netip"
 	"sync"
+	"time"
 
 	"github.com/gogf/gf/v2/os/glog"
 	"github.com/libp2p/go-libp2p"
@@ -157,6 +158,20 @@ func (e *Engine) Start() error {
 	})
 
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
+	go func() {
+		for {
+			peers, err := e.dht.GetClosestPeers(e.ctx, string(e.host.ID()))
+			if err != nil {
+				e.log.Warningf(e.ctx, "Failed to get nearest node: %s", err)
+				continue
+			}
+
+			for _, id := range peers {
+				e.relayChan <- e.host.Peerstore().PeerInfo(id)
+			}
+			time.Sleep(10 * time.Minute)
+		}
+	}()
 
 	go e.RoutineTUNReader()
 	go e.RoutineTUNWriter()

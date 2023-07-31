@@ -243,6 +243,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 }
 
 func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
+	e.log.Debugf(e.ctx, "Try to connect to the corresponding node of %s", dst)
 	e.routeTable.Lock()
 	for prefix, id := range e.routeTable.prefix {
 		if prefix.Contains(dst) {

@@ -22,7 +22,7 @@ func main() {
 	fmt.Println(peer.IDFromPrivateKey(key))
 
 	opt := engine.Option{
-		TUNName:    "nethive0",
+		TUNName:    "hive0",
 		MTU:        1500,
 		LocalAddr:  netip.MustParsePrefix("192.168.199.1/32"),
 		PrivateKey: key,

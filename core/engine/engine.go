@@ -69,9 +69,15 @@ func New(opt *Option) (*Engine, error) {
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
 	e.routeTable.m = opt.PeersRouteTable
-	e.routeTable.prefix = make(map[netip.Prefix]peer.ID)
 	e.routeTable.id = make(map[peer.ID]PacketChan)
 	e.routeTable.addr = make(map[netip.Addr]PacketChan)
+	e.routeTable.prefix = make(map[netip.Prefix]peer.ID)
+	for id, prefixes := range e.routeTable.m {
+		for _, prefix := range prefixes {
+			e.routeTable.prefix[prefix] = id
+		}
+	}
+
 	node, err := libp2p.New(
 		libp2p.Identity(opt.PrivateKey),
 		libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }),
@@ -213,21 +219,20 @@ func (e *Engine) RoutineRouteTableWriter() {
 	)
 
 	for payload = range e.devReader {
-		e.routeTable.Lock()
 		var conn PacketChan
+		e.routeTable.RLock()
 		c, ok := e.routeTable.addr[payload.Dst]
+		e.routeTable.RUnlock()
 		if ok {
 			conn = c
 		} else {
 			c, err := e.addConn(payload.Dst)
 			if err != nil {
 				e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)
-				e.routeTable.Unlock()
 				continue
 			}
 			conn = c
 		}
-		e.routeTable.Unlock()
 
 		select {
 		case conn <- payload:

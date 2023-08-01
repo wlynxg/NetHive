@@ -21,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/mr-tron/base58"
 )
 
 const (
@@ -302,6 +303,11 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		}()
 		go func() {
 			e.log.Infof(ctx, "start find peer %s by mDNS", string(id))
+			idr, err := base58.Decode(string(id))
+			if err != nil {
+				e.log.Warningf(ctx, "base58 decode failed")
+				return
+			}
 			ticker := time.NewTimer(10 * time.Second)
 			for {
 				select {
@@ -309,7 +315,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 					ticker.Stop()
 					return
 				case <-ticker.C:
-					info := e.host.Peerstore().PeerInfo(id)
+					info := e.host.Peerstore().PeerInfo(peer.ID(idr))
 					if len(info.Addrs) > 0 {
 						peerInfo <- info
 					}
@@ -318,7 +324,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		}()
 		go func() {
 			for info := range peerInfo {
-				e.log.Infof(e.ctx, "find peer: %s", info.String())
+				e.log.Infof(e.ctx, "find peer: %s", info)
 				stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 				if err != nil {
 					e.log.Warningf(e.ctx, "Connection establishment with node %s failed due to %s", info, err)

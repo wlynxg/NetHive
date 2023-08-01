@@ -8,5 +8,5 @@ import (
 
 func (e *Engine) HandlePeerFound(pi peer.AddrInfo) {
 	e.log.Infof(e.ctx, "find %s by mDNS", pi)
-	e.host.Peerstore().AddAddrs(peer.ID(pi.ID.String()), pi.Addrs, 5*time.Minute)
+	e.host.Peerstore().AddAddrs(pi.ID, pi.Addrs, 5*time.Minute)
 }

@@ -280,20 +280,52 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		conn = peerChan
 		e.routeTable.addr.Store(dst, peerChan)
 		dev := &devWrapper{w: e.devWriter, r: peerChan}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		peerInfo := make(chan peer.AddrInfo)
 		go func() {
-			peers, err := e.discovery.FindPeers(e.ctx, string(id))
+			e.log.Infof(ctx, "start find peer %s by DHT", id)
+			peers, err := e.discovery.FindPeers(ctx, string(id))
 			if err != nil {
-				e.log.Warningf(e.ctx, "Finding node %s failed because %s", id, err)
+				e.log.Warningf(ctx, "Finding node %s failed because %s", id, err)
 			}
 
-			for info := range peers {
-				if info.ID != id || len(info.Addrs) <= 0 {
-					continue
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case info := <-peers:
+					if info.ID == id && len(info.Addrs) > 0 {
+						peerInfo <- info
+					}
 				}
+			}
+		}()
+		go func() {
+			e.log.Infof(ctx, "start find peer %s by mDNS", id)
+			ticker := time.NewTimer(10 * time.Second)
+			for {
+				select {
+				case <-ctx.Done():
+					ticker.Stop()
+					return
+				case <-ticker.C:
+					info := e.host.Peerstore().PeerInfo(id)
+					if info.ID == id && len(info.Addrs) > 0 {
+						peerInfo <- info
+					}
+				}
+			}
+		}()
+		go func() {
+			for info := range peerInfo {
+				e.log.Infof(e.ctx, "find peer: %s", info.String())
 				stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 				if err != nil {
 					e.log.Warningf(e.ctx, "Connection establishment with node %s failed due to %s", info, err)
 				}
+				cancel()
 				e.log.Infof(e.ctx, "Peer [%s] connect success")
 
 				go func() {
@@ -314,6 +346,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		}()
 		return false
 	})
+
 	if conn != nil {
 		return conn, nil
 	}

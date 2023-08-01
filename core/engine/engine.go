@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 )
@@ -41,6 +42,7 @@ type Engine struct {
 	host      host.Host
 	dht       *dht.IpfsDHT
 	discovery *routing.RoutingDiscovery
+	mdns      mdns.Service
 
 	relayChan chan peer.AddrInfo
 
@@ -94,6 +96,7 @@ func New(opt *Option) (*Engine, error) {
 		return nil, err
 	}
 	e.discovery = routing.NewRoutingDiscovery(e.dht)
+	e.mdns = mdns.NewMdnsService(e.host, "_net._hive", e)
 
 	return e, nil
 }
@@ -172,6 +175,10 @@ func (e *Engine) Start() error {
 			time.Sleep(10 * time.Minute)
 		}
 	}()
+
+	if err := e.mdns.Start(); err != nil {
+		return err
+	}
 
 	go e.RoutineTUNReader()
 	go e.RoutineTUNWriter()
@@ -283,7 +290,6 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 				if info.ID != id || len(info.Addrs) <= 0 {
 					continue
 				}
-
 				stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 				if err != nil {
 					e.log.Warningf(e.ctx, "Connection establishment with node %s failed due to %s", info, err)

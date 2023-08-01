@@ -21,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/multiformats/go-multiaddr"
 )
 
 const (
@@ -43,6 +44,7 @@ type Engine struct {
 	dht       *dht.IpfsDHT
 	discovery *routing.RoutingDiscovery
 	mdns      mdns.Service
+	mdnsMap   xsync.Map[peer.ID, []multiaddr.Multiaddr]
 
 	relayChan chan peer.AddrInfo
 
@@ -309,9 +311,9 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 					ticker.Stop()
 					return
 				case <-ticker.C:
-					info := e.host.Peerstore().PeerInfo(id)
-					if info.ID == id && len(info.Addrs) > 0 {
-						peerInfo <- info
+					info, ok := e.mdnsMap.Load(id)
+					if ok && len(info) > 0 {
+						peerInfo <- peer.AddrInfo{ID: id, Addrs: info}
 					}
 				}
 			}

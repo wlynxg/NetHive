@@ -324,6 +324,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 				stream, err := e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 				if err != nil {
 					e.log.Warningf(e.ctx, "Connection establishment with node %s failed due to %s", info, err)
+					continue
 				}
 				cancel()
 				e.log.Infof(e.ctx, "Peer [%s] connect success")

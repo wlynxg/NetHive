@@ -281,8 +281,6 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		e.routeTable.addr.Store(dst, peerChan)
 		dev := &devWrapper{w: e.devWriter, r: peerChan}
 		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
 		peerInfo := make(chan peer.AddrInfo)
 		go func() {
 			e.log.Infof(ctx, "start find peer %s by DHT", id)

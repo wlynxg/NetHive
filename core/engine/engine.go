@@ -283,10 +283,10 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		peerInfo := make(chan peer.AddrInfo)
 		go func() {
-			e.log.Infof(ctx, "start find peer %s by DHT", id)
+			e.log.Infof(ctx, "start find peer %s by DHT", string(id))
 			peers, err := e.discovery.FindPeers(ctx, string(id))
 			if err != nil {
-				e.log.Warningf(ctx, "Finding node %s failed because %s", id, err)
+				e.log.Warningf(ctx, "Finding node %s failed because %s", string(id), err)
 			}
 
 			for {
@@ -301,7 +301,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 			}
 		}()
 		go func() {
-			e.log.Infof(ctx, "start find peer %s by mDNS", id)
+			e.log.Infof(ctx, "start find peer %s by mDNS", string(id))
 			ticker := time.NewTimer(10 * time.Second)
 			for {
 				select {

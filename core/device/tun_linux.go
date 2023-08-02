@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -38,21 +37,14 @@ type tun struct {
 	mtu       int
 	cacheTime time.Time
 	index     int32
-
-	// flock is used for file usage locks
-	flock   sync.Mutex
-	tunFile *os.File
+	tunFile   *os.File
 }
 
 func (t *tun) Read(buff []byte) (int, error) {
-	t.flock.Lock()
-	defer t.flock.Unlock()
 	return t.tunFile.Read(buff)
 }
 
 func (t *tun) Write(buff []byte) (int, error) {
-	t.flock.Lock()
-	defer t.flock.Unlock()
 	return t.tunFile.Write(buff)
 }
 
@@ -83,9 +75,6 @@ func (t *tun) FlushAddress() error {
 }
 
 func (t *tun) getNameFromSys() (string, error) {
-	t.flock.Lock()
-	defer t.flock.Unlock()
-
 	conn, err := t.tunFile.SyscallConn()
 	if err != nil {
 		return "", err

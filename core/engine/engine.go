@@ -22,6 +22,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 	"github.com/mr-tron/base58"
+	"go4.org/netipx"
 )
 
 const (
@@ -52,10 +53,10 @@ type Engine struct {
 	errChan   chan error
 
 	routeTable struct {
-		m      xsync.Map[peer.ID, []netip.Prefix]
-		prefix xsync.Map[netip.Prefix, peer.ID]
-		id     xsync.Map[peer.ID, PacketChan]
-		addr   xsync.Map[netip.Addr, PacketChan]
+		m    xsync.Map[peer.ID, []netip.Prefix]
+		set  xsync.Map[peer.ID, *netipx.IPSet]
+		id   xsync.Map[peer.ID, PacketChan]
+		addr xsync.Map[netip.Addr, PacketChan]
 	}
 }
 
@@ -72,15 +73,22 @@ func New(opt *Option) (*Engine, error) {
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
 	e.routeTable.m = xsync.Map[peer.ID, []netip.Prefix]{}
-	e.routeTable.prefix = xsync.Map[netip.Prefix, peer.ID]{}
+	e.routeTable.set = xsync.Map[peer.ID, *netipx.IPSet]{}
 	e.routeTable.id = xsync.Map[peer.ID, PacketChan]{}
 	e.routeTable.addr = xsync.Map[netip.Addr, PacketChan]{}
 
 	for id, prefixes := range e.opt.PeersRouteTable {
 		e.routeTable.m.Store(id, prefixes)
+
+		b := netipx.IPSetBuilder{}
 		for _, prefix := range prefixes {
-			e.routeTable.prefix.Store(prefix, id)
+			b.AddPrefix(prefix)
 		}
+		set, err := b.IPSet()
+		if err != nil {
+			return nil, err
+		}
+		e.routeTable.set.Store(id, set)
 	}
 
 	node, err := libp2p.New(
@@ -149,7 +157,26 @@ func (e *Engine) Start() error {
 				e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", string(id), err)
 			}
 		}()
-		defer stream.Close()
+
+		defer func() {
+			stream.Close()
+			set, ok := e.routeTable.set.Load(id)
+			if !ok {
+				return
+			}
+
+			var addr []netip.Addr
+			e.routeTable.addr.Range(func(key netip.Addr, value PacketChan) bool {
+				if set.Contains(key) {
+					addr = append(addr, key)
+				}
+				return true
+			})
+
+			for _, a := range addr {
+				e.routeTable.addr.Delete(a)
+			}
+		}()
 		_, err = io.Copy(dev, stream)
 		if err != nil && err != io.EOF {
 			e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)
@@ -269,13 +296,14 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 	e.log.Debugf(e.ctx, "Try to connect to the corresponding node of %s", dst)
 
 	var conn PacketChan
-	e.routeTable.prefix.Range(func(prefix netip.Prefix, id peer.ID) bool {
+	e.routeTable.set.Range(func(id peer.ID, prefix *netipx.IPSet) bool {
 		if !prefix.Contains(dst) {
 			return true
 		}
 
 		if c, ok := e.routeTable.id.Load(id); ok {
 			conn = c
+			e.routeTable.addr.Store(dst, c)
 			return false
 		}
 		peerChan := make(chan Payload, ChanSize)

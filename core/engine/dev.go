@@ -1,6 +1,8 @@
 package engine
 
-import "io"
+import (
+	"io"
+)
 
 var _ io.ReadWriteCloser = (*devWrapper)(nil)
 
@@ -12,7 +14,7 @@ type devWrapper struct {
 func (c *devWrapper) Read(p []byte) (n int, err error) {
 	packet := <-c.r
 	copy(p, packet.Data)
-	return len(p), nil
+	return len(packet.Data), nil
 }
 
 func (c *devWrapper) Write(p []byte) (n int, err error) {

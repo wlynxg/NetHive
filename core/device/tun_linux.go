@@ -182,6 +182,7 @@ func CreateTUN(name string, mtu int) (Device, error) {
 	// set the current file descriptor to non-blocking status to improve concurrency
 	err = unix.SetNonblock(tfd, true)
 	if err != nil {
+		syscall.Close(tfd)
 		return nil, err
 	}
 

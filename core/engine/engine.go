@@ -158,17 +158,23 @@ func (e *Engine) Start() error {
 
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
 	go func() {
+		ticker := time.NewTimer(5 * time.Minute)
 		for {
-			peers, err := e.dht.GetClosestPeers(e.ctx, string(e.host.ID()))
-			if err != nil {
-				e.log.Warningf(e.ctx, "Failed to get nearest node: %s", err)
-				continue
-			}
+			select {
+			case <-ticker.C:
+				peers, err := e.dht.GetClosestPeers(e.ctx, string(e.host.ID()))
+				if err != nil {
+					e.log.Warningf(e.ctx, "Failed to get nearest node: %s", err)
+					continue
+				}
 
-			for _, id := range peers {
-				e.relayChan <- e.host.Peerstore().PeerInfo(id)
+				for _, id := range peers {
+					e.relayChan <- e.host.Peerstore().PeerInfo(id)
+				}
+			case <-e.ctx.Done():
+				ticker.Stop()
+				return
 			}
-			time.Sleep(10 * time.Minute)
 		}
 	}()
 
@@ -204,8 +210,9 @@ func (e *Engine) RoutineTUNReader() {
 			continue
 		}
 		payload := Payload{
-			Src: ip.Src(),
-			Dst: ip.Dst(),
+			Src:  ip.Src(),
+			Dst:  ip.Dst(),
+			Data: make([]byte, n),
 		}
 		copy(payload.Data, buff[:n])
 		select {
@@ -225,7 +232,7 @@ func (e *Engine) RoutineTUNWriter() {
 	for payload = range e.devWriter {
 		_, err = e.device.Write(payload.Data)
 		if err != nil {
-			e.errChan <- fmt.Errorf("[RoutineTUNWriter]: %s", err)
+			e.log.Error(e.ctx, fmt.Errorf("[RoutineTUNWriter]: %s", err))
 			return
 		}
 	}
@@ -237,7 +244,6 @@ func (e *Engine) RoutineRouteTableWriter() {
 	)
 
 	for payload = range e.devReader {
-		fmt.Println(payload.Dst)
 		var conn PacketChan
 		c, ok := e.routeTable.addr.Load(payload.Dst)
 		if ok {
@@ -310,6 +316,7 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 				e.log.Warningf(e.ctx, "Connection establishment with node %s failed due to %s", info, err)
 			}
 			e.log.Infof(e.ctx, "Peer [%s] connect success", string(id))
+			defer stream.Close()
 
 			go func() {
 				defer stream.Close()
@@ -319,7 +326,6 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 				}
 			}()
 
-			defer stream.Close()
 			_, err = io.Copy(dev, stream)
 			if err != nil && err != io.EOF {
 				e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)

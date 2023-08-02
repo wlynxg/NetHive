@@ -131,34 +131,29 @@ func (e *Engine) Start() error {
 	wg.Wait()
 
 	e.host.SetStreamHandler(VPNStreamProtocol, func(stream network.Stream) {
-		id := peer.ID(stream.ID())
-		prefixes, ok := e.routeTable.m.Load(id)
-		if !ok {
+		id := peer.ID(stream.Conn().RemotePeer().String())
+		if _, ok := e.routeTable.m.Load(id); !ok {
 			stream.Close()
 			return
 		}
 
 		peerChan := make(PacketChan, ChanSize)
 		e.routeTable.id.Store(id, peerChan)
-		for _, prefix := range prefixes {
-			e.routeTable.prefix.Store(prefix, id)
-		}
+		defer e.routeTable.id.Delete(id)
 
 		dev := &devWrapper{w: e.devWriter, r: peerChan}
 		go func() {
+			defer stream.Close()
 			_, err := io.Copy(stream, dev)
 			if err != nil && err != io.EOF {
-				e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", id, err)
-				stream.Close()
-				return
+				e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", string(id), err)
 			}
 		}()
+		defer stream.Close()
 		_, err = io.Copy(dev, stream)
 		if err != nil && err != io.EOF {
-			e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", id, err)
+			e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)
 		}
-		stream.Close()
-		return
 	})
 
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
@@ -282,6 +277,8 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 		e.routeTable.addr.Store(dst, peerChan)
 
 		go func() {
+			defer e.routeTable.addr.Delete(dst)
+
 			dev := &devWrapper{w: e.devWriter, r: peerChan}
 			e.log.Infof(e.ctx, "start find peer %s", string(id))
 			peerc, err := e.discovery.FindPeers(e.ctx, string(id))
@@ -318,14 +315,14 @@ func (e *Engine) addConn(dst netip.Addr) (PacketChan, error) {
 				defer stream.Close()
 				_, err := io.Copy(stream, dev)
 				if err != nil && err != io.EOF {
-					e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", id, err)
+					e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", string(id), err)
 				}
 			}()
 
 			defer stream.Close()
 			_, err = io.Copy(dev, stream)
 			if err != nil && err != io.EOF {
-				e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", id, err)
+				e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)
 			}
 		}()
 		return false

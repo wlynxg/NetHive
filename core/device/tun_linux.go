@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -38,6 +39,7 @@ type tun struct {
 	cacheTime time.Time
 	index     int32
 	tunFile   *os.File
+	state     atomic.Bool
 }
 
 func (t *tun) Read(buff []byte) (int, error) {
@@ -72,6 +74,44 @@ func (t *tun) AddAddress(addr netip.Prefix) error {
 
 func (t *tun) FlushAddress() error {
 	return command.IP4FlushAddr(t.name)
+}
+
+func (t *tun) Up() error {
+	return t.changeState(true)
+}
+
+func (t *tun) Down() error {
+	return t.changeState(false)
+}
+
+func (t *tun) State() bool {
+	return t.state.Load()
+}
+
+func (t *tun) changeState(state bool) error {
+	if t.state.Load() == state {
+		return nil
+	}
+
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(fd)
+
+	var ifr ifReq
+	copy(ifr[:], t.name)
+	if state {
+		*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) |= syscall.IFF_UP
+	} else {
+		*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) &^= syscall.IFF_UP
+	}
+	err = ioctl(uintptr(fd), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
+	if err != nil {
+		return err
+	}
+	t.state.Store(state)
+	return nil
 }
 
 func (t *tun) getNameFromSys() (string, error) {

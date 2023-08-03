@@ -118,8 +118,12 @@ func (e *Engine) Start() error {
 		return err
 	}
 	e.device = tun
-	err = tun.AddAddress(opt.LocalAddr)
-	if err != nil {
+
+	if err = tun.AddAddress(opt.LocalAddr); err != nil {
+		return err
+	}
+
+	if err := e.device.Up(); err != nil {
 		return err
 	}
 

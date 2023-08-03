@@ -19,4 +19,10 @@ type Device interface {
 	AddAddress(addr netip.Prefix) error
 	// FlushAddress clear all address
 	FlushAddress() error
+	// Up make the network card status up
+	Up() error
+	// Down make the network card status down
+	Down() error
+	// State return the status of the network card, true means up, false means down
+	State() bool
 }

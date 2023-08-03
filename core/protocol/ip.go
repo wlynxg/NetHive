@@ -63,7 +63,22 @@ func (i *IPv4) Dst() netip.Addr {
 }
 
 func ParseIPv6(buff []byte) (*IPv6, error) {
-	return &IPv6{}, nil
+	headerLength := (buff[0] & 0xF0) * 5
+
+	src, ok := netip.AddrFromSlice(buff[8:24])
+	if !ok || !src.IsValid() {
+		return nil, errors.New("invalid IP packet")
+	}
+
+	dst, ok := netip.AddrFromSlice(buff[24:40])
+	if !ok || !dst.IsValid() {
+		return nil, errors.New("invalid IP packet")
+	}
+	return &IPv6{
+		headerLength: int(headerLength),
+		src:          src,
+		dst:          dst,
+	}, nil
 }
 
 type IPv6 struct {

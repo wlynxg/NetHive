@@ -41,7 +41,7 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 		return conn, nil
 	}
 
-	return nil, errors.New(fmt.Sprintf("unknown dst addr: %s", dst.String()))
+	return nil, errors.New(fmt.Sprintf("the routing rule corresponding to %s was not found", dst.String()))
 }
 
 func (e *Engine) addConnByID(id peer.ID) (PacketChan, error) {
@@ -97,6 +97,10 @@ func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 			e.log.Warningf(e.ctx, "Connection establishment with node %s failed", string(id))
 			return
 		}
+	}
+
+	if stream == nil {
+		return
 	}
 
 	e.log.Infof(e.ctx, "Peer [%s] connect success", string(id))

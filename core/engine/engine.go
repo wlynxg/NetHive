@@ -3,6 +3,7 @@ package engine
 import (
 	"NetHive/core/device"
 	"NetHive/core/protocol"
+	"NetHive/core/route"
 	"NetHive/pkgs/xsync"
 	"context"
 	"fmt"
@@ -75,11 +76,27 @@ func New(opt *Option) (*Engine, error) {
 	e.routeTable.id = xsync.Map[peer.ID, PacketChan]{}
 	e.routeTable.addr = xsync.Map[netip.Addr, PacketChan]{}
 
+	// create tun
+	tun, err := device.CreateTUN(opt.TUNName, opt.MTU)
+	if err != nil {
+		return nil, err
+	}
+	e.device = tun
+
+	name, err := e.device.Name()
+	if err != nil {
+		return nil, err
+	}
+
 	for id, prefixes := range e.opt.PeersRouteTable {
 		e.routeTable.m.Store(id, prefixes)
 
 		b := netipx.IPSetBuilder{}
 		for _, prefix := range prefixes {
+			err := route.Add(name, prefix)
+			if err != nil {
+				return nil, err
+			}
 			b.AddPrefix(prefix)
 		}
 		set, err := b.IPSet()
@@ -112,14 +129,7 @@ func (e *Engine) Start() error {
 	defer e.cancel()
 	opt := e.opt
 
-	// create tun
-	tun, err := device.CreateTUN(opt.TUNName, opt.MTU)
-	if err != nil {
-		return err
-	}
-	e.device = tun
-
-	if err = tun.AddAddress(opt.LocalAddr); err != nil {
+	if err := e.device.AddAddress(opt.LocalAddr); err != nil {
 		return err
 	}
 
@@ -179,7 +189,7 @@ func (e *Engine) Start() error {
 				e.routeTable.addr.Delete(a)
 			}
 		}()
-		_, err = io.Copy(dev, stream)
+		_, err := io.Copy(dev, stream)
 		if err != nil && err != io.EOF {
 			e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)
 		}

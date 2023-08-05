@@ -54,3 +54,28 @@ func Add(dev string, target netip.Prefix) error {
 	}
 	return nil
 }
+
+func Del(target netip.Prefix) error {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+
+	_, cidr, err := net.ParseCIDR(target.String())
+	if err != nil {
+		return err
+	}
+	mask := cidr.Mask
+
+	rt := RtEntry{}
+	rt.Dst = syscall.RawSockaddrInet4{Family: syscall.AF_INET, Addr: target.Addr().As4()}
+	rt.GenMask = syscall.RawSockaddrInet4{Family: syscall.AF_INET, Addr: [4]byte{mask[0], mask[1], mask[2], mask[3]}}
+	rtBytes := *(*[unsafe.Sizeof(rt)]byte)(unsafe.Pointer(&rt))
+
+	err = system.Ioctl(uintptr(fd), syscall.SIOCDELRT, uintptr(unsafe.Pointer(&rtBytes[0])))
+	if err != nil {
+		return err
+	}
+	return nil
+}

@@ -44,13 +44,13 @@ func (t *tun) Name() (string, error) {
 func (t *tun) AddAddress(addr netip.Prefix) error {
 	luid := t.adapter.LUID()
 	itf := win.NetItf(luid)
-
 	return errors.Wrap(itf.AddIPAddress(addr), "Error AddAddress:")
 }
 
 func (t *tun) FlushAddress() error {
-	//TODO implement me
-	panic("implement me")
+	luid := t.adapter.LUID()
+	itf := win.NetItf(luid)
+	return errors.Wrap(itf.FlushAddress(), "Error FlushAddress:")
 }
 
 func (t *tun) Up() error {

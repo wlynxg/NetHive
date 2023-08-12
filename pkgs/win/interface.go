@@ -9,7 +9,9 @@ type NetItf uint64
 
 func (i NetItf) AddIPAddress(address netip.Prefix) error {
 	row := &MibUnicastIPAddressRow{}
-	row.Init()
+	if err := row.Init(); err != nil {
+		return err
+	}
 	if err := row.Address.SetAddrPort(netip.AddrPortFrom(address.Addr(), 0)); err != nil {
 		return err
 	}
@@ -21,6 +23,18 @@ func (i NetItf) AddIPAddress(address netip.Prefix) error {
 	return nil
 }
 
-func (i *NetItf) FlushAddress() {
+func (i NetItf) FlushAddress() error {
+	tab := &MibUnicastIPAddressTable{}
 
+	if err := tab.Init(); err != nil {
+		return err
+	}
+
+	for _, row := range tab.Rows() {
+		if row.InterfaceLUID == uint64(i) {
+			row.Delete()
+		}
+	}
+	tab.Free()
+	return nil
 }

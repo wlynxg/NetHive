@@ -3,6 +3,7 @@ package device
 import (
 	"NetHive/pkgs/win"
 	"net/netip"
+	"os"
 	"runtime"
 
 	"github.com/pkg/errors"
@@ -41,9 +42,24 @@ func (t *tun) Read(buff []byte) (int, error) {
 	}
 }
 
-func (t *tun) Write(bytes []byte) (int, error) {
-	//TODO implement me
-	panic("implement me")
+func (t *tun) Write(buff []byte) (int, error) {
+	size := len(buff)
+	for {
+		packet, err := t.session.AllocateSendPacket(size)
+		switch err {
+		case nil:
+			copy(packet, buff)
+			t.session.SendPacket(packet)
+			return size, nil
+		case windows.ERROR_HANDLE_EOF:
+			return 0, os.ErrClosed
+		case windows.ERROR_BUFFER_OVERFLOW:
+			runtime.Gosched()
+			continue
+		default:
+			return 0, errors.Errorf("Write failed: %v", err)
+		}
+	}
 }
 
 func (t *tun) Close() error {

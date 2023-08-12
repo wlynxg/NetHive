@@ -3,8 +3,10 @@ package device
 import (
 	"NetHive/pkgs/win"
 	"net/netip"
+	"runtime"
 
 	"github.com/pkg/errors"
+	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
 )
 
@@ -19,9 +21,24 @@ type tun struct {
 	mtu     int
 }
 
-func (t *tun) Read(bytes []byte) (int, error) {
-	//TODO implement me
-	panic("implement me")
+func (t *tun) Read(buff []byte) (int, error) {
+	for {
+		packet, err := t.session.ReceivePacket()
+		switch err {
+		case nil:
+			size := len(packet)
+			copy(buff, packet)
+			t.session.ReleaseReceivePacket(packet)
+			return size, nil
+		case windows.ERROR_NO_MORE_FILES:
+			runtime.Gosched()
+			continue
+		case windows.ERROR_INVALID_DATA:
+			return 0, errors.New("Send ring corrupt")
+		default:
+			return 0, errors.Errorf("Read failed: %v", err)
+		}
+	}
 }
 
 func (t *tun) Write(bytes []byte) (int, error) {

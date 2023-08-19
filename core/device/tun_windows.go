@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
+	"sync/atomic"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/windows"
@@ -20,6 +21,7 @@ type tun struct {
 	session *wintun.Session
 	name    string
 	mtu     int
+	state   atomic.Bool
 }
 
 func (t *tun) Read(buff []byte) (int, error) {
@@ -87,18 +89,17 @@ func (t *tun) FlushAddress() error {
 }
 
 func (t *tun) Up() error {
-	//TODO implement me
-	panic("implement me")
+	t.state.Store(true)
+	return nil
 }
 
 func (t *tun) Down() error {
-	//TODO implement me
-	panic("implement me")
+	t.state.Store(false)
+	return nil
 }
 
 func (t *tun) State() bool {
-	//TODO implement me
-	panic("implement me")
+	return t.state.Load()
 }
 
 func CreateTUN(name string, mtu int) (Device, error) {

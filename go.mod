@@ -7,8 +7,10 @@ require (
 	github.com/libp2p/go-libp2p v0.29.0
 	github.com/libp2p/go-libp2p-kad-dht v0.21.1
 	github.com/mr-tron/base58 v1.2.0
+	github.com/pkg/errors v0.9.1
 	go4.org/netipx v0.0.0-20230728184502-ec4c8b891b28
-	golang.org/x/sys v0.10.0
+	golang.org/x/sys v0.11.0
+	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2
 )
 
 require (
@@ -89,7 +91,6 @@ require (
 	github.com/opencontainers/runtime-spec v1.0.2 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/prometheus/client_golang v1.14.0 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
@@ -120,7 +121,6 @@ require (
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	golang.org/x/tools v0.11.0 // indirect
-	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )

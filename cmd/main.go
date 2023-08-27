@@ -2,37 +2,53 @@ package main
 
 import (
 	"NetHive/core/engine"
-	"fmt"
-	"net/netip"
-	"os"
+	"flag"
+	"log"
+	"path"
 
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/gogf/gf/v2/encoding/gjson"
+	"github.com/gogf/gf/v2/os/gfile"
 )
 
 func main() {
-	file, err := os.ReadFile("private.key")
-	if err != nil {
+	dir := flag.String("config-dir", "", `configuration file path`)
+	if dir == nil || *dir == "" || !gfile.Exists(*dir) || !gfile.IsDir(*dir) {
+		log.Fatal("config dir must be a valid folder path")
 		return
 	}
-	key, err := crypto.UnmarshalPrivateKey(file)
-	if err != nil {
-		return
-	}
-	fmt.Println(peer.IDFromPrivateKey(key))
 
-	opt := engine.Option{
-		TUNName:    "hive0",
-		MTU:        1500,
-		LocalAddr:  netip.MustParsePrefix("192.168.199.1/32"),
-		PrivateKey: key,
-		PeersRouteTable: map[peer.ID][]netip.Prefix{
-			"12D3KooWFDbzFGc89W8ZbaedTVcD4YgGMaKzTa3kw9hcZrBUrdZt": {netip.MustParsePrefix("192.168.199.1/32")},
-			"12D3KooWLYUNghjWRUXBrdLqP2E7qky8r6GzJ74sJS4ZXn7cddJF": {netip.MustParsePrefix("192.168.199.2/32")},
-		},
+	var opt *engine.Option
+	cfg := path.Join(*dir, "config.json")
+	if gfile.Exists(cfg) {
+		load, err := gjson.Load(cfg)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		if err := load.Scan(&opt); err != nil {
+			log.Fatal(err)
+			return
+		}
+	} else {
+		key, err := engine.NewPrivateKey()
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		opt = &engine.Option{
+			TUNName:    "hive0",
+			MTU:        1500,
+			PrivateKey: key,
+		}
+
+		if err := gfile.PutBytes(cfg, gjson.New(opt).MustToJson()); err != nil {
+			log.Fatal(err)
+			return
+		}
 	}
 
-	e, err := engine.New(&opt)
+	e, err := engine.New(opt)
 	if err != nil {
 		panic(e)
 	}

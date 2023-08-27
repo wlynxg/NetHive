@@ -106,8 +106,12 @@ func New(opt *Option) (*Engine, error) {
 		e.routeTable.set.Store(id, set)
 	}
 
+	pk, err := opt.PrivateKey.PrivKey()
+	if err != nil {
+		return nil, err
+	}
 	node, err := libp2p.New(
-		libp2p.Identity(opt.PrivateKey),
+		libp2p.Identity(pk),
 		libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }),
 	)
 	if err != nil {

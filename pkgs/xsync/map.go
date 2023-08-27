@@ -27,7 +27,7 @@ import (
 // The zero Map is empty and ready for use. A Map must not be copied after first use.
 //
 // In the terminology of the Go memory model, Map arranges that a write operation
-// “synchronizes before” any read operation that observes the effect of the write, where
+// “synchronizes before” any read operation that observes the effect of to write, where
 // read and write operations are defined as follows.
 // Load, LoadAndDelete, LoadOrStore, Swap, CompareAndSwap, and CompareAndDelete
 // are read operations; Delete, LoadAndDelete, Store, and Swap are write operations;

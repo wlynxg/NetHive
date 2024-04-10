@@ -16,7 +16,7 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 	e.log.Debugf("Try to connect to the corresponding node of %s", dst)
 
 	var conn PacketChan
-	e.routeTable.set.Range(func(id peer.ID, prefix *netipx.IPSet) bool {
+	e.routeTable.set.Range(func(id string, prefix *netipx.IPSet) bool {
 		if !prefix.Contains(dst) {
 			return true
 		}
@@ -44,8 +44,8 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 	return nil, errors.New(fmt.Sprintf("the routing rule corresponding to %s was not found", dst.String()))
 }
 
-func (e *Engine) addConnByID(id peer.ID) (PacketChan, error) {
-	e.log.Debugf("Try to connect to the corresponding node of %s", string(id))
+func (e *Engine) addConnByID(id string) (PacketChan, error) {
+	e.log.Debugf("Try to connect to the corresponding node of %s", id)
 
 	if conn, ok := e.routeTable.id.Load(id); ok {
 		return conn, nil
@@ -59,19 +59,19 @@ func (e *Engine) addConnByID(id peer.ID) (PacketChan, error) {
 		e.addConn(peerChan, id)
 	}()
 
-	return nil, errors.New(fmt.Sprintf("unknown dst addr: %s", string(id)))
+	return nil, errors.New(fmt.Sprintf("unknown dst addr: %s", id))
 }
 
-func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
+func (e *Engine) addConn(peerChan PacketChan, id string) {
 	dev := &devWrapper{w: e.devWriter, r: peerChan}
-	e.log.Infof("start find peer %s", string(id))
+	e.log.Infof("start find peer %s", id)
 
 	var (
 		stream network.Stream
 		err    error
 	)
 
-	idr, err := base58.Decode(string(id))
+	idr, err := base58.Decode(id)
 	if err != nil {
 		e.log.Infof("base58 decode failed: %s", err)
 	}
@@ -80,14 +80,14 @@ func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 	if len(info.Addrs) > 0 {
 		stream, err = e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 		if err != nil {
-			peerc, err := e.discovery.FindPeers(e.ctx, string(id))
+			peerc, err := e.discovery.FindPeers(e.ctx, id)
 			if err != nil {
 				e.log.Warnf("Finding node by dht %s failed because %s", string(id), err)
 				return
 			}
 
 			for info := range peerc {
-				if info.ID.String() == string(id) && len(info.Addrs) > 0 {
+				if info.ID.String() == id && len(info.Addrs) > 0 {
 					stream, err = e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
 					if err == nil {
 						break

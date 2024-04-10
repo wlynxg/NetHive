@@ -1,29 +1,36 @@
 package config
 
 import (
-	"log"
 	"net/netip"
 
 	"github.com/gogf/gf/v2/encoding/gjson"
 	"github.com/gogf/gf/v2/os/gfile"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/peer"
+	mlog "github.com/wlynxg/NetHive/pkgs/log"
 )
 
 type Config struct {
-	path            string
-	TUNName         string
-	MTU             int
+	path string
+
+	// tun
+	TUNName   string
+	MTU       int
+	LocalAddr netip.Prefix
+
+	// libp2p
 	PrivateKey      *PrivateKey
 	PeerID          string
-	PeersRouteTable map[peer.ID][]netip.Prefix
-	LocalRoute      []netip.Prefix
-	LocalAddr       netip.Prefix
+	Bootstraps      []string
+	PeersRouteTable map[string]netip.Prefix
 	EnableMDNS      bool
+
+	// log
+	LogConfigs []mlog.CoreConfig
 }
 
 func (c *Config) Save() error {
 	if err := gfile.PutBytes(c.path, gjson.New(c).MustToJsonIndent()); err != nil {
-		log.Fatal(err)
 		return err
 	}
 	return nil
@@ -61,6 +68,10 @@ func defaultConfig(cfg *Config) {
 		cfg.MTU = 1500
 	}
 
+	if !cfg.LocalAddr.IsValid() {
+		cfg.LocalAddr = netip.MustParsePrefix("192.168.168.1/24")
+	}
+
 	if cfg.PrivateKey == nil {
 		cfg.PrivateKey, _ = NewPrivateKey()
 		key, err := cfg.PrivateKey.PrivKey()
@@ -74,7 +85,9 @@ func defaultConfig(cfg *Config) {
 		cfg.PeerID = id.String()
 	}
 
-	if !cfg.LocalAddr.IsValid() {
-		cfg.LocalAddr = netip.MustParsePrefix("192.168.168.1/24")
+	if len(cfg.Bootstraps) == 0 {
+		for _, n := range dht.DefaultBootstrapPeers {
+			cfg.Bootstraps = append(cfg.Bootstraps, n.String())
+		}
 	}
 }

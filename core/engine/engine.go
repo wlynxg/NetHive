@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/netip"
 	"sync"
-	"time"
 
 	"github.com/wlynxg/NetHive/core/config"
 	"github.com/wlynxg/NetHive/core/device"
@@ -54,9 +53,9 @@ type Engine struct {
 	errChan   chan error
 
 	routeTable struct {
-		m    xsync.Map[peer.ID, []netip.Prefix]
-		set  xsync.Map[peer.ID, *netipx.IPSet]
-		id   xsync.Map[peer.ID, PacketChan]
+		m    xsync.Map[string, netip.Prefix]
+		set  xsync.Map[string, *netipx.IPSet]
+		id   xsync.Map[string, PacketChan]
 		addr xsync.Map[netip.Addr, PacketChan]
 	}
 }
@@ -71,10 +70,6 @@ func New(cfg *config.Config) (*Engine, error) {
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
-	e.routeTable.m = xsync.Map[peer.ID, []netip.Prefix]{}
-	e.routeTable.set = xsync.Map[peer.ID, *netipx.IPSet]{}
-	e.routeTable.id = xsync.Map[peer.ID, PacketChan]{}
-	e.routeTable.addr = xsync.Map[netip.Addr, PacketChan]{}
 
 	// create tun
 	tun, err := device.CreateTUN(cfg.TUNName, cfg.MTU)
@@ -88,17 +83,12 @@ func New(cfg *config.Config) (*Engine, error) {
 		return nil, err
 	}
 
-	for id, prefixes := range e.cfg.PeersRouteTable {
-		e.routeTable.m.Store(id, prefixes)
+	for id, prefix := range e.cfg.PeersRouteTable {
+		e.log.Debugf("r: %s -> %s", id, prefix)
+		e.routeTable.m.Store(id, prefix)
 
 		b := netipx.IPSetBuilder{}
-		for _, prefix := range prefixes {
-			err := route.Add(name, prefix)
-			if err != nil {
-				return nil, err
-			}
-			b.AddPrefix(prefix)
-		}
+		err := route.Add(name, prefix)
 		set, err := b.IPSet()
 		if err != nil {
 			return nil, err
@@ -112,7 +102,6 @@ func New(cfg *config.Config) (*Engine, error) {
 	}
 	node, err := libp2p.New(
 		libp2p.Identity(pk),
-		libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo { return e.relayChan }),
 	)
 	if err != nil {
 		return nil, err
@@ -142,84 +131,25 @@ func (e *Engine) Start() error {
 	}
 
 	wg := sync.WaitGroup{}
-	for _, info := range dht.GetDefaultBootstrapPeerAddrInfos() {
-		info := info
+	for _, info := range cfg.Bootstraps {
+		addrInfo, err := peer.AddrInfoFromString(info)
+		if err != nil {
+			e.log.Debugf("fail to parse '%s': %v", info, err)
+			continue
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := e.host.Connect(e.ctx, info); err != nil {
-				e.log.Warnf("connection %s fails, because of error :%s", info.String(), err)
+			if err := e.host.Connect(e.ctx, *addrInfo); err != nil {
+				e.log.Warnf("connection %s fails, because of error :%s", addrInfo.String(), err)
 			}
 		}()
 	}
 	wg.Wait()
 
-	e.host.SetStreamHandler(VPNStreamProtocol, func(stream network.Stream) {
-		id := peer.ID(stream.Conn().RemotePeer().String())
-		if _, ok := e.routeTable.m.Load(id); !ok {
-			stream.Close()
-			return
-		}
-
-		peerChan := make(PacketChan, ChanSize)
-		e.routeTable.id.Store(id, peerChan)
-		defer e.routeTable.id.Delete(id)
-
-		dev := &devWrapper{w: e.devWriter, r: peerChan}
-		go func() {
-			defer stream.Close()
-			_, err := io.Copy(stream, dev)
-			if err != nil && err != io.EOF {
-				e.log.Errorf("Peer [%s] stream write error: %s", string(id), err)
-			}
-		}()
-
-		defer func() {
-			stream.Close()
-			set, ok := e.routeTable.set.Load(id)
-			if !ok {
-				return
-			}
-
-			var addr []netip.Addr
-			e.routeTable.addr.Range(func(key netip.Addr, value PacketChan) bool {
-				if set.Contains(key) {
-					addr = append(addr, key)
-				}
-				return true
-			})
-
-			for _, a := range addr {
-				e.routeTable.addr.Delete(a)
-			}
-		}()
-		_, err := io.Copy(dev, stream)
-		if err != nil && err != io.EOF {
-			e.log.Errorf("Peer [%s] stream read error: %s", string(id), err)
-		}
-	})
-
+	e.host.SetStreamHandler(VPNStreamProtocol, e.Handler)
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
-	go func() {
-		ticker := time.NewTimer(5 * time.Minute)
-		for {
-			select {
-			case <-ticker.C:
-				peers, err := e.dht.GetClosestPeers(e.ctx, string(e.host.ID()))
-				if err != nil {
-					e.log.Warnf("Failed to get nearest node: %s", err)
-					continue
-				}
-
-				for _, id := range peers {
-					e.relayChan <- e.host.Peerstore().PeerInfo(id)
-				}
-			case <-e.ctx.Done():
-				ticker.Stop()
-				return
-			}
-		}
-	}()
 
 	if cfg.EnableMDNS {
 		e.mdns = mdns.NewMdnsService(e.host, "_net._hive", e)
@@ -292,9 +222,10 @@ func (e *Engine) RoutineRouteTableWriter() {
 	for payload = range e.devReader {
 		var conn PacketChan
 
+		e.log.Debugf("%s -> %s", payload.Src, payload.Dst)
 		if payload.Dst.IsMulticast() {
-			e.routeTable.m.Range(func(key peer.ID, value []netip.Prefix) bool {
-				if key == peer.ID(e.host.ID().String()) {
+			e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
+				if key == e.host.ID().String() {
 					return true
 				}
 
@@ -340,5 +271,52 @@ func (e *Engine) RoutineRouteTableWriter() {
 				e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
 			}
 		}
+	}
+}
+
+func (e *Engine) Handler(stream network.Stream) {
+	e.log.Debugf("%s connect", stream.Conn().RemotePeer())
+
+	id := stream.Conn().RemotePeer().String()
+	if _, ok := e.routeTable.m.Load(id); !ok {
+		stream.Close()
+		return
+	}
+
+	peerChan := make(PacketChan, ChanSize)
+	e.routeTable.id.Store(id, peerChan)
+	defer e.routeTable.id.Delete(id)
+
+	dev := &devWrapper{w: e.devWriter, r: peerChan}
+	go func() {
+		defer stream.Close()
+		_, err := io.Copy(stream, dev)
+		if err != nil && err != io.EOF {
+			e.log.Errorf("Peer [%s] stream write error: %s", string(id), err)
+		}
+	}()
+
+	defer func() {
+		stream.Close()
+		set, ok := e.routeTable.set.Load(id)
+		if !ok {
+			return
+		}
+
+		var addr []netip.Addr
+		e.routeTable.addr.Range(func(key netip.Addr, value PacketChan) bool {
+			if set.Contains(key) {
+				addr = append(addr, key)
+			}
+			return true
+		})
+
+		for _, a := range addr {
+			e.routeTable.addr.Delete(a)
+		}
+	}()
+	_, err := io.Copy(dev, stream)
+	if err != nil && err != io.EOF {
+		e.log.Errorf("Peer [%s] stream read error: %s", string(id), err)
 	}
 }

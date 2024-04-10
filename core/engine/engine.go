@@ -125,7 +125,6 @@ func New(cfg *config.Config) (*Engine, error) {
 		return nil, err
 	}
 	e.discovery = routing.NewRoutingDiscovery(e.dht)
-	e.mdns = mdns.NewMdnsService(e.host, "_net._hive", e)
 
 	return e, nil
 }
@@ -222,8 +221,11 @@ func (e *Engine) Start() error {
 		}
 	}()
 
-	if err := e.mdns.Start(); err != nil {
-		return err
+	if cfg.EnableMDNS {
+		e.mdns = mdns.NewMdnsService(e.host, "_net._hive", e)
+		if err := e.mdns.Start(); err != nil {
+			e.log.Warnf("fail to run mdns: %v", err)
+		}
 	}
 
 	go e.RoutineTUNReader()

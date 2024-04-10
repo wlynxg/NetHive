@@ -12,9 +12,9 @@ import (
 	"github.com/wlynxg/NetHive/core/device"
 	"github.com/wlynxg/NetHive/core/protocol"
 	"github.com/wlynxg/NetHive/core/route"
+	mlog "github.com/wlynxg/NetHive/pkgs/log"
 	"github.com/wlynxg/NetHive/pkgs/xsync"
 
-	"github.com/gogf/gf/v2/os/glog"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -35,7 +35,7 @@ const (
 type PacketChan chan Payload
 
 type Engine struct {
-	log    *glog.Logger
+	log    *mlog.Logger
 	ctx    context.Context
 	cancel context.CancelFunc
 	cfg    *config.Config
@@ -65,7 +65,7 @@ func New(cfg *config.Config) (*Engine, error) {
 	var (
 		e = new(Engine)
 	)
-	e.log = glog.New()
+	e.log = mlog.New("engine")
 	e.cfg = cfg
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.devWriter = make(PacketChan, ChanSize)
@@ -119,7 +119,7 @@ func New(cfg *config.Config) (*Engine, error) {
 	}
 
 	e.host = node
-	e.log.Infof(e.ctx, "host ID: %s", node.ID().String())
+	e.log.Infof("host ID: %s", node.ID().String())
 	e.dht, err = dht.New(e.ctx, e.host)
 	if err != nil {
 		return nil, err
@@ -149,7 +149,7 @@ func (e *Engine) Start() error {
 		go func() {
 			defer wg.Done()
 			if err := e.host.Connect(e.ctx, info); err != nil {
-				e.log.Warningf(e.ctx, "connection %s fails, because of error :%s", info.String(), err)
+				e.log.Warnf("connection %s fails, because of error :%s", info.String(), err)
 			}
 		}()
 	}
@@ -171,7 +171,7 @@ func (e *Engine) Start() error {
 			defer stream.Close()
 			_, err := io.Copy(stream, dev)
 			if err != nil && err != io.EOF {
-				e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", string(id), err)
+				e.log.Errorf("Peer [%s] stream write error: %s", string(id), err)
 			}
 		}()
 
@@ -196,7 +196,7 @@ func (e *Engine) Start() error {
 		}()
 		_, err := io.Copy(dev, stream)
 		if err != nil && err != io.EOF {
-			e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)
+			e.log.Errorf("Peer [%s] stream read error: %s", string(id), err)
 		}
 	})
 
@@ -208,7 +208,7 @@ func (e *Engine) Start() error {
 			case <-ticker.C:
 				peers, err := e.dht.GetClosestPeers(e.ctx, string(e.host.ID()))
 				if err != nil {
-					e.log.Warningf(e.ctx, "Failed to get nearest node: %s", err)
+					e.log.Warnf("Failed to get nearest node: %s", err)
 					continue
 				}
 
@@ -250,7 +250,7 @@ func (e *Engine) RoutineTUNReader() {
 		}
 		ip, err := protocol.ParseIP(buff[:n])
 		if err != nil {
-			e.log.Warningf(e.ctx, "[RoutineTUNReader] drop packet, because %s", err)
+			e.log.Warnf("[RoutineTUNReader] drop packet, because %s", err)
 			continue
 		}
 		payload := Payload{
@@ -262,7 +262,7 @@ func (e *Engine) RoutineTUNReader() {
 		select {
 		case e.devReader <- payload:
 		default:
-			e.log.Warningf(e.ctx, "[RoutineTUNReader] drop packet: %s, because the sending queue is already full", payload.Dst)
+			e.log.Warnf("[RoutineTUNReader] drop packet: %s, because the sending queue is already full", payload.Dst)
 		}
 	}
 }
@@ -300,21 +300,21 @@ func (e *Engine) RoutineRouteTableWriter() {
 					select {
 					case conn <- payload:
 					default:
-						e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
+						e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
 					}
 					return true
 				}
 
 				conn, err := e.addConnByID(key)
 				if err != nil {
-					e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)
+					e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)
 					return true
 				}
 
 				select {
 				case conn <- payload:
 				default:
-					e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
+					e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
 				}
 
 				return true
@@ -326,7 +326,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 			} else {
 				c, err := e.addConnByDst(payload.Dst)
 				if err != nil {
-					e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)
+					e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)
 					continue
 				}
 				conn = c
@@ -335,7 +335,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 			select {
 			case conn <- payload:
 			default:
-				e.log.Warningf(e.ctx, "[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
+				e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
 			}
 		}
 	}

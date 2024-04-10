@@ -13,7 +13,7 @@ import (
 )
 
 func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
-	e.log.Debugf(e.ctx, "Try to connect to the corresponding node of %s", dst)
+	e.log.Debugf("Try to connect to the corresponding node of %s", dst)
 
 	var conn PacketChan
 	e.routeTable.set.Range(func(id peer.ID, prefix *netipx.IPSet) bool {
@@ -45,7 +45,7 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 }
 
 func (e *Engine) addConnByID(id peer.ID) (PacketChan, error) {
-	e.log.Debugf(e.ctx, "Try to connect to the corresponding node of %s", string(id))
+	e.log.Debugf("Try to connect to the corresponding node of %s", string(id))
 
 	if conn, ok := e.routeTable.id.Load(id); ok {
 		return conn, nil
@@ -64,7 +64,7 @@ func (e *Engine) addConnByID(id peer.ID) (PacketChan, error) {
 
 func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 	dev := &devWrapper{w: e.devWriter, r: peerChan}
-	e.log.Infof(e.ctx, "start find peer %s", string(id))
+	e.log.Infof("start find peer %s", string(id))
 
 	var (
 		stream network.Stream
@@ -73,7 +73,7 @@ func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 
 	idr, err := base58.Decode(string(id))
 	if err != nil {
-		e.log.Infof(e.ctx, "base58 decode failed: %s", err)
+		e.log.Infof("base58 decode failed: %s", err)
 	}
 
 	info := e.host.Peerstore().PeerInfo(peer.ID(idr))
@@ -82,7 +82,7 @@ func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 		if err != nil {
 			peerc, err := e.discovery.FindPeers(e.ctx, string(id))
 			if err != nil {
-				e.log.Warningf(e.ctx, "Finding node by dht %s failed because %s", string(id), err)
+				e.log.Warnf("Finding node by dht %s failed because %s", string(id), err)
 				return
 			}
 
@@ -94,7 +94,7 @@ func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 					}
 				}
 			}
-			e.log.Warningf(e.ctx, "Connection establishment with node %s failed", string(id))
+			e.log.Warnf("Connection establishment with node %s failed", string(id))
 			return
 		}
 	}
@@ -103,19 +103,19 @@ func (e *Engine) addConn(peerChan PacketChan, id peer.ID) {
 		return
 	}
 
-	e.log.Infof(e.ctx, "Peer [%s] connect success", string(id))
+	e.log.Infof("Peer [%s] connect success", string(id))
 	defer stream.Close()
 
 	go func() {
 		defer stream.Close()
 		_, err := io.Copy(stream, dev)
 		if err != nil && err != io.EOF {
-			e.log.Errorf(e.ctx, "Peer [%s] stream write error: %s", string(id), err)
+			e.log.Errorf("Peer [%s] stream write error: %s", string(id), err)
 		}
 	}()
 
 	_, err = io.Copy(dev, stream)
 	if err != nil && err != io.EOF {
-		e.log.Errorf(e.ctx, "Peer [%s] stream read error: %s", string(id), err)
+		e.log.Errorf("Peer [%s] stream read error: %s", string(id), err)
 	}
 }

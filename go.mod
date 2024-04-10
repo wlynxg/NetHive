@@ -4,12 +4,11 @@ go 1.21
 
 require (
 	github.com/gogf/gf/v2 v2.7.0
-	github.com/libp2p/go-libp2p v0.33.2
+	github.com/libp2p/go-libp2p v0.33.1
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/mr-tron/base58 v1.2.0
 	github.com/pkg/errors v0.9.1
 	go.uber.org/zap v1.27.0
-	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba
 	golang.org/x/sys v0.19.0
 )
 

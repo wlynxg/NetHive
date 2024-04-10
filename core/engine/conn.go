@@ -9,33 +9,28 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mr-tron/base58/base58"
-	"go4.org/netipx"
 )
 
 func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 	e.log.Debugf("Try to connect to the corresponding node of %s", dst)
 
 	var conn PacketChan
-	e.routeTable.set.Range(func(id string, prefix *netipx.IPSet) bool {
-		if !prefix.Contains(dst) {
+	if c, ok := e.routeTable.addr.Load(dst); ok {
+		conn = c
+	} else {
+		e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
+			if value.Addr().Compare(dst) == 0 {
+				conn = make(PacketChan, ChanSize)
+				go func() {
+					defer e.routeTable.id.Delete(key)
+					defer e.routeTable.addr.Delete(dst)
+					e.addConn(conn, key)
+				}()
+				return false
+			}
 			return true
-		}
-
-		if c, ok := e.routeTable.id.Load(id); ok {
-			conn = c
-			e.routeTable.addr.Store(dst, c)
-			return false
-		}
-		peerChan := make(chan Payload, ChanSize)
-		conn = peerChan
-		e.routeTable.addr.Store(dst, peerChan)
-
-		go func() {
-			defer e.routeTable.addr.Delete(dst)
-			e.addConn(peerChan, id)
-		}()
-		return false
-	})
+		})
+	}
 
 	if conn != nil {
 		return conn, nil

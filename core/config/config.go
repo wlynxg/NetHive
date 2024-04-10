@@ -37,7 +37,7 @@ func (c *Config) Save() error {
 }
 
 func Load(path string) (*Config, error) {
-	cfg := &Config{}
+	cfg := &Config{path: path}
 	if gfile.Exists(path) {
 		load, err := gjson.Load(path)
 		if err != nil {
@@ -49,17 +49,19 @@ func Load(path string) (*Config, error) {
 		}
 	}
 
-	cfg.path = path
-	defaultConfig(cfg)
+	err := defaultConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
 
-	err := cfg.Save()
+	err = cfg.Save()
 	if err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func defaultConfig(cfg *Config) {
+func defaultConfig(cfg *Config) error {
 	if cfg.TUNName == "" {
 		cfg.TUNName = "hive0"
 	}
@@ -76,11 +78,11 @@ func defaultConfig(cfg *Config) {
 		cfg.PrivateKey, _ = NewPrivateKey()
 		key, err := cfg.PrivateKey.PrivKey()
 		if err != nil {
-			return
+			return err
 		}
 		id, err := peer.IDFromPrivateKey(key)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		cfg.PeerID = id.String()
 	}
@@ -90,4 +92,5 @@ func defaultConfig(cfg *Config) {
 			cfg.Bootstraps = append(cfg.Bootstraps, n.String())
 		}
 	}
+	return nil
 }

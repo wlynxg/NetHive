@@ -27,12 +27,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	e, err := engine.New(cfg)
+	e, err := engine.Run(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = e.Start()
+	err = e.Run()
 	if err != nil {
 		log.Fatal(err)
 	}

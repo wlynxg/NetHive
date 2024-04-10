@@ -1,15 +1,15 @@
 package device
 
 import (
-	"NetHive/pkgs/win"
 	"net/netip"
 	"os"
 	"runtime"
 	"sync/atomic"
 
+	"github.com/wlynxg/NetHive/pkgs/win"
+
 	"github.com/pkg/errors"
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
 )
 
 const (

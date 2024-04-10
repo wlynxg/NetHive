@@ -1,7 +1,6 @@
 package device
 
 import (
-	"NetHive/pkgs/command"
 	"bytes"
 	"fmt"
 	"net/netip"
@@ -10,6 +9,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/wlynxg/NetHive/pkgs/command"
 
 	"golang.org/x/sys/unix"
 )
@@ -21,7 +22,7 @@ type ifReq [40]byte
 func ioctl(fd uintptr, request uintptr, argp uintptr) error {
 	_, _, err := unix.Syscall(unix.SYS_IOCTL, fd, request, argp)
 	if err != 0 {
-		return os.NewSyscallError("ioctl: ", err)
+		return os.NewSyscallError("ioctl", err)
 	}
 	return nil
 }
@@ -106,7 +107,7 @@ func (t *tun) changeState(state bool) error {
 	} else {
 		*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) &^= syscall.IFF_UP
 	}
-	err = ioctl(uintptr(fd), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
+	err = ioctl(uintptr(fd), unix.SIOCGIFFLAGS, uintptr(unsafe.Pointer(&ifr[0])))
 	if err != nil {
 		return err
 	}

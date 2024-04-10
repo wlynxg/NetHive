@@ -1,16 +1,18 @@
 package engine
 
 import (
-	"NetHive/core/device"
-	"NetHive/core/protocol"
-	"NetHive/core/route"
-	"NetHive/pkgs/xsync"
 	"context"
 	"fmt"
 	"io"
 	"net/netip"
 	"sync"
 	"time"
+
+	"github.com/wlynxg/NetHive/core/config"
+	"github.com/wlynxg/NetHive/core/device"
+	"github.com/wlynxg/NetHive/core/protocol"
+	"github.com/wlynxg/NetHive/core/route"
+	"github.com/wlynxg/NetHive/pkgs/xsync"
 
 	"github.com/gogf/gf/v2/os/glog"
 	"github.com/libp2p/go-libp2p"
@@ -36,7 +38,7 @@ type Engine struct {
 	log    *glog.Logger
 	ctx    context.Context
 	cancel context.CancelFunc
-	opt    *Option
+	cfg    *config.Config
 	// tun device
 	device device.Device
 
@@ -59,15 +61,13 @@ type Engine struct {
 	}
 }
 
-func New(opt *Option) (*Engine, error) {
+func New(cfg *config.Config) (*Engine, error) {
 	var (
 		e = new(Engine)
 	)
 	e.log = glog.New()
-	e.opt = opt
-	ctx, cancel := context.WithCancel(context.Background())
-	e.ctx = ctx
-	e.cancel = cancel
+	e.cfg = cfg
+	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
 	e.relayChan = make(chan peer.AddrInfo, ChanSize)
@@ -77,7 +77,7 @@ func New(opt *Option) (*Engine, error) {
 	e.routeTable.addr = xsync.Map[netip.Addr, PacketChan]{}
 
 	// create tun
-	tun, err := device.CreateTUN(opt.TUNName, opt.MTU)
+	tun, err := device.CreateTUN(cfg.TUNName, cfg.MTU)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func New(opt *Option) (*Engine, error) {
 		return nil, err
 	}
 
-	for id, prefixes := range e.opt.PeersRouteTable {
+	for id, prefixes := range e.cfg.PeersRouteTable {
 		e.routeTable.m.Store(id, prefixes)
 
 		b := netipx.IPSetBuilder{}
@@ -106,7 +106,7 @@ func New(opt *Option) (*Engine, error) {
 		e.routeTable.set.Store(id, set)
 	}
 
-	pk, err := opt.PrivateKey.PrivKey()
+	pk, err := cfg.PrivateKey.PrivKey()
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +117,7 @@ func New(opt *Option) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	e.host = node
 	e.log.Infof(e.ctx, "host ID: %s", node.ID().String())
 	e.dht, err = dht.New(e.ctx, e.host)
@@ -131,9 +132,9 @@ func New(opt *Option) (*Engine, error) {
 
 func (e *Engine) Start() error {
 	defer e.cancel()
-	opt := e.opt
+	cfg := e.cfg
 
-	if err := e.device.AddAddress(opt.LocalAddr); err != nil {
+	if err := e.device.AddAddress(cfg.LocalAddr); err != nil {
 		return err
 	}
 

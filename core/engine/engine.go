@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/netip"
-	"sync"
 
 	"github.com/wlynxg/NetHive/core/route"
 
@@ -127,28 +126,14 @@ func (e *Engine) Run() error {
 		e.log.Debugf("successfully add %s's route: %s", id, prefix)
 	}
 
-	// DHT init
-	wg := sync.WaitGroup{}
-	for _, info := range e.cfg.Bootstraps {
-		addrInfo, err := peer.AddrInfoFromString(info)
-		if err != nil {
-			e.log.Debugf("fail to parse '%s': %v", info, err)
-			continue
+	if len(e.cfg.Bootstraps) > 0 {
+		if err := e.EnableDHT(); err != nil {
+			return err
 		}
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := e.host.Connect(e.ctx, *addrInfo); err != nil {
-				e.log.Warnf("connection %s fails, because of error :%s", addrInfo.String(), err)
-			}
-		}()
 	}
-	wg.Wait()
 
 	if e.cfg.EnableMDNS {
-		err := e.EnableMdns()
-		if err != nil {
+		if err := e.EnableMdns(); err != nil {
 			return err
 		}
 	}

@@ -64,7 +64,6 @@ func (e *Engine) RoutineRouteTableWriter() {
 		var conn PacketChan
 
 		e.log.Debugf("%s -> %s", payload.Src, payload.Dst)
-
 		c, ok := e.routeTable.addr.Load(payload.Dst)
 		if ok {
 			conn = c

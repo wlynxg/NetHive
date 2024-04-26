@@ -70,29 +70,21 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 	idr, err := base58.Decode(id)
 	if err != nil {
 		e.log.Infof("base58 decode failed: %s", err)
+		return
 	}
 
-	info := e.host.Peerstore().PeerInfo(peer.ID(idr))
-	if len(info.Addrs) > 0 {
-		stream, err = e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
+	pch := e.SearchNode(e.ctx, peer.ID(idr))
+	for info := range pch {
+		err := e.host.Connect(e.ctx, info)
 		if err != nil {
-			peerc, err := e.discovery.FindPeers(e.ctx, id)
-			if err != nil {
-				e.log.Warnf("Finding node by dht %s failed because %s", id, err)
-				return
-			}
-
-			for info := range peerc {
-				if info.ID.String() == id && len(info.Addrs) > 0 {
-					stream, err = e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
-					if err == nil {
-						break
-					}
-				}
-			}
-			e.log.Warnf("Connection establishment with node %s failed", id)
-			return
+			continue
 		}
+
+		stream, err = e.host.NewStream(e.ctx, info.ID, VPNStreamProtocol)
+		if err != nil || stream == nil {
+			continue
+		}
+		break
 	}
 
 	if stream == nil {

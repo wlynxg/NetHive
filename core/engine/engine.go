@@ -158,13 +158,6 @@ func (e *Engine) Run() error {
 	e.host.SetStreamHandler(VPNStreamProtocol, e.VPNHandler)
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
 
-	if e.cfg.EnableMDNS {
-		e.mdns = mdns.NewMdnsService(e.host, "_net._hive", e)
-		if err := e.mdns.Start(); err != nil {
-			e.log.Warnf("fail to run mdns: %v", err)
-		}
-	}
-
 	go e.RoutineTUNReader()
 	go e.RoutineTUNWriter()
 	go e.RoutineRouteTableWriter()

@@ -21,6 +21,7 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 		e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
 			if value.Addr().Compare(dst) == 0 {
 				conn = make(PacketChan, ChanSize)
+				e.routeTable.addr.Store(dst, conn)
 				go func() {
 					defer e.routeTable.id.Delete(key)
 					defer e.routeTable.addr.Delete(dst)
@@ -77,7 +78,7 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 		if err != nil {
 			peerc, err := e.discovery.FindPeers(e.ctx, id)
 			if err != nil {
-				e.log.Warnf("Finding node by dht %s failed because %s", string(id), err)
+				e.log.Warnf("Finding node by dht %s failed because %s", id, err)
 				return
 			}
 
@@ -89,7 +90,7 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 					}
 				}
 			}
-			e.log.Warnf("Connection establishment with node %s failed", string(id))
+			e.log.Warnf("Connection establishment with node %s failed", id)
 			return
 		}
 	}
@@ -98,19 +99,19 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 		return
 	}
 
-	e.log.Infof("Peer [%s] connect success", string(id))
+	e.log.Infof("Peer [%s] connect success", id)
 	defer stream.Close()
 
 	go func() {
 		defer stream.Close()
 		_, err := io.Copy(stream, dev)
 		if err != nil && err != io.EOF {
-			e.log.Errorf("Peer [%s] stream write error: %s", string(id), err)
+			e.log.Errorf("Peer [%s] stream write error: %s", id, err)
 		}
 	}()
 
 	_, err = io.Copy(dev, stream)
 	if err != nil && err != io.EOF {
-		e.log.Errorf("Peer [%s] stream read error: %s", string(id), err)
+		e.log.Errorf("Peer [%s] stream read error: %s", id, err)
 	}
 }

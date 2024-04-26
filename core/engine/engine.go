@@ -3,10 +3,11 @@ package engine
 import (
 	"context"
 	"fmt"
-	"github.com/wlynxg/NetHive/core/route"
 	"io"
 	"net/netip"
 	"sync"
+
+	"github.com/wlynxg/NetHive/core/route"
 
 	"github.com/wlynxg/NetHive/core/config"
 	"github.com/wlynxg/NetHive/core/device"
@@ -64,8 +65,9 @@ func Run(cfg *config.Config) (*Engine, error) {
 		err error
 	)
 
-	e.log = mlog.New("engine")
 	e.cfg = cfg
+	mlog.SetOutputTypes(cfg.LogConfigs...)
+	e.log = mlog.New("engine")
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
@@ -97,7 +99,7 @@ func (e *Engine) Run() error {
 	var err error
 	defer e.cancel()
 
-	// create tun
+	// TUN init
 	e.device, err = device.CreateTUN(e.cfg.TUNName, e.cfg.MTU)
 	if err != nil {
 		return err
@@ -108,17 +110,6 @@ func (e *Engine) Run() error {
 		return err
 	}
 
-	for id, prefix := range e.cfg.PeersRouteTable {
-		e.routeTable.m.Store(id, prefix)
-
-		err := route.Add(name, prefix)
-		if err != nil {
-			e.log.Warnf("fail to add %s's route: %s", id, prefix)
-			continue
-		}
-		e.log.Debugf("successfully add %s's route: %s", id, prefix)
-	}
-
 	if err := e.device.AddAddress(e.cfg.LocalAddr); err != nil {
 		return err
 	}
@@ -127,6 +118,18 @@ func (e *Engine) Run() error {
 		return err
 	}
 
+	for id, prefix := range e.cfg.PeersRouteTable {
+		e.routeTable.m.Store(id, prefix)
+
+		err := route.Add(name, prefix)
+		if err != nil {
+			e.log.Warnf("fail to add %s's route %s: %v", id, prefix, err)
+			continue
+		}
+		e.log.Debugf("successfully add %s's route: %s", id, prefix)
+	}
+
+	// DHT init
 	wg := sync.WaitGroup{}
 	for _, info := range e.cfg.Bootstraps {
 		addrInfo, err := peer.AddrInfoFromString(info)
@@ -144,6 +147,13 @@ func (e *Engine) Run() error {
 		}()
 	}
 	wg.Wait()
+
+	if e.cfg.EnableMDNS {
+		err := e.EnableMdns()
+		if err != nil {
+			return err
+		}
+	}
 
 	e.host.SetStreamHandler(VPNStreamProtocol, e.VPNHandler)
 	util.Advertise(e.ctx, e.discovery, e.host.ID().String())

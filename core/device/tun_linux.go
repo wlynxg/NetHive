@@ -11,21 +11,13 @@ import (
 	"unsafe"
 
 	"github.com/wlynxg/NetHive/pkgs/command"
+	"github.com/wlynxg/NetHive/pkgs/system"
 
 	"golang.org/x/sys/unix"
 )
 
 // https://man7.org/linux/man-pages/man7/netdevice.7.html
 type ifReq [40]byte
-
-// https://man7.org/linux/man-pages/man2/ioctl.2.html
-func ioctl(fd uintptr, request uintptr, argp uintptr) error {
-	_, _, err := unix.Syscall(unix.SYS_IOCTL, fd, request, argp)
-	if err != 0 {
-		return os.NewSyscallError("ioctl", err)
-	}
-	return nil
-}
 
 // compilation time interface check
 var _ Device = new(tun)
@@ -107,7 +99,7 @@ func (t *tun) changeState(state bool) error {
 	} else {
 		*(*uint16)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) &^= syscall.IFF_UP
 	}
-	err = ioctl(uintptr(fd), unix.SIOCGIFFLAGS, uintptr(unsafe.Pointer(&ifr[0])))
+	err = system.Ioctl(uintptr(fd), unix.SIOCSIFFLAGS, uintptr(unsafe.Pointer(&ifr[0])))
 	if err != nil {
 		return err
 	}
@@ -124,7 +116,7 @@ func (t *tun) getNameFromSys() (string, error) {
 	var ifr ifReq
 	var errno syscall.Errno
 	err = conn.Control(func(fd uintptr) {
-		ioctl(fd, unix.TUNGETIFF, uintptr(unsafe.Pointer(&ifr[0])))
+		system.Ioctl(fd, unix.TUNGETIFF, uintptr(unsafe.Pointer(&ifr[0])))
 	})
 	if err != nil || errno != 0 {
 		return "", fmt.Errorf("failed to get name of TUN device: %w", err)
@@ -147,7 +139,7 @@ func (t *tun) getMTUFromSys() (int, error) {
 
 	var ifr ifReq
 	copy(ifr[:], t.name)
-	err = ioctl(uintptr(fd), unix.SIOCGIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
+	err = system.Ioctl(uintptr(fd), unix.SIOCGIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
 	if err != nil {
 		return -1, err
 	}
@@ -164,7 +156,7 @@ func (t *tun) setMTU(n int) error {
 	var ifr ifReq
 	copy(ifr[:], t.name)
 	*(*uint32)(unsafe.Pointer(&ifr[unix.IFNAMSIZ])) = uint32(n)
-	err = ioctl(uintptr(fd), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
+	err = system.Ioctl(uintptr(fd), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
 	if err != nil {
 		return err
 	}
@@ -180,7 +172,7 @@ func (t *tun) getIFIndex() (int32, error) {
 
 	var ifr ifReq
 	copy(ifr[:], t.name)
-	err = ioctl(uintptr(fd), unix.SIOCGIFINDEX, uintptr(unsafe.Pointer(&ifr[0])))
+	err = system.Ioctl(uintptr(fd), unix.SIOCGIFINDEX, uintptr(unsafe.Pointer(&ifr[0])))
 	if err != nil {
 		return 0, err
 	}

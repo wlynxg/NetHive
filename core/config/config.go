@@ -23,6 +23,8 @@ type Config struct {
 	PeerID          string
 	Bootstraps      []string
 	PeersRouteTable map[string]netip.Prefix
+	Relays          []string
+	EnableAutoRelay bool
 	EnableMDNS      bool
 
 	// log

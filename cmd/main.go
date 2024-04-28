@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 
@@ -27,7 +28,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	e, err := engine.Run(cfg)
+	e, err := engine.Run(context.Background(), cfg)
 	if err != nil {
 		log.Fatal(err)
 	}

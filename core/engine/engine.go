@@ -56,27 +56,65 @@ type Engine struct {
 	}
 }
 
-func Run(cfg *config.Config) (*Engine, error) {
+func Run(ctx context.Context, cfg *config.Config) (*Engine, error) {
 	var (
-		e   = new(Engine)
-		err error
+		e       = new(Engine)
+		err     error
+		options []libp2p.Option
 	)
 
 	e.cfg = cfg
 	mlog.SetOutputTypes(cfg.LogConfigs...)
 	e.log = mlog.New("engine")
-	e.ctx, e.cancel = context.WithCancel(context.Background())
+	e.ctx, e.cancel = context.WithCancel(ctx)
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
-	e.relayChan = make(chan peer.AddrInfo, ChanSize)
 
 	pk, err := cfg.PrivateKey.PrivKey()
 	if err != nil {
 		return nil, err
 	}
-	node, err := libp2p.New(
-		libp2p.Identity(pk),
-	)
+	options = append(options, libp2p.Identity(pk))
+
+	if len(cfg.Relays) > 0 {
+		var relays []peer.AddrInfo
+		for _, relay := range cfg.Relays {
+			addrInfo, err := peer.AddrInfoFromString(relay)
+			if err != nil {
+				e.log.Warnf("fail to parse '%s': %v", relay, err)
+				continue
+			}
+			relays = append(relays, *addrInfo)
+		}
+		options = append(options, libp2p.EnableAutoRelayWithStaticRelays(relays))
+	} else if cfg.EnableAutoRelay {
+		e.relayChan = make(chan peer.AddrInfo, ChanSize)
+		options = append(options, libp2p.EnableAutoRelayWithPeerSource(func(ctx context.Context, num int) <-chan peer.AddrInfo {
+			c := make(chan peer.AddrInfo, num)
+			go func() {
+				defer close(c)
+				for ; num >= 0; num-- {
+					select {
+					case v, ok := <-e.relayChan:
+						if !ok {
+							return
+						}
+						e.log.Debugf("auto relay find node: %v", v)
+						select {
+						case c <- v:
+						case <-ctx.Done():
+							return
+						}
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			return c
+		}))
+	}
+
+	node, err := libp2p.New(options...)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +174,11 @@ func (e *Engine) Run() error {
 		if err := e.EnableMdns(); err != nil {
 			return err
 		}
+	}
+
+	if len(e.cfg.Relays) == 0 && e.cfg.EnableAutoRelay {
+		// start auto relay detect
+		go e.autoRelayFinder(e.ctx)
 	}
 
 	e.host.SetStreamHandler(VPNStreamProtocol, e.VPNHandler)

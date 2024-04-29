@@ -19,7 +19,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
-	"github.com/libp2p/go-libp2p/p2p/discovery/util"
 )
 
 const (
@@ -182,11 +181,13 @@ func (e *Engine) Run() error {
 	}
 
 	e.host.SetStreamHandler(VPNStreamProtocol, e.VPNHandler)
-	util.Advertise(e.ctx, e.discovery, e.host.ID().String())
 
 	go e.RoutineTUNReader()
 	go e.RoutineTUNWriter()
 	go e.RoutineRouteTableWriter()
+
+	e.log.Infof("listen addrs: %s", e.host.Addrs())
+	e.log.Infof("protocol handles: %s", e.host.Mux().Protocols())
 
 	if err := <-e.errChan; err != nil {
 		return err
@@ -195,7 +196,7 @@ func (e *Engine) Run() error {
 }
 
 func (e *Engine) VPNHandler(stream network.Stream) {
-	e.log.Debugf("%s connect", stream.Conn().RemotePeer())
+	e.log.Debugf("[%s] connect by %s", stream.Conn().RemotePeer(), stream.Conn().RemoteMultiaddr())
 
 	id := stream.Conn().RemotePeer().String()
 	if _, ok := e.routeTable.m.Load(id); !ok {

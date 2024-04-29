@@ -19,7 +19,13 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 		conn = c
 	} else {
 		e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
-			if value.Addr().Compare(dst) == 0 {
+			if value.Addr().Compare(dst) != 0 {
+				return true
+			}
+
+			if c, ok := e.routeTable.id.Load(key); ok {
+				conn = c
+			} else {
 				conn = make(PacketChan, ChanSize)
 				e.routeTable.addr.Store(dst, conn)
 				go func() {
@@ -27,9 +33,8 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 					defer e.routeTable.addr.Delete(dst)
 					e.addConn(conn, key)
 				}()
-				return false
 			}
-			return true
+			return false
 		})
 	}
 
@@ -91,7 +96,7 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 		return
 	}
 
-	e.log.Infof("Peer [%s] connect success", id)
+	e.log.Infof("successfully connect [%s] by %s", id, stream.Conn().RemoteMultiaddr())
 	defer stream.Close()
 
 	go func() {

@@ -14,9 +14,10 @@ type Config struct {
 	path string
 
 	// tun
-	TUNName   string
-	MTU       int
-	LocalAddr netip.Prefix
+	TUNName         string
+	MTU             int
+	LocalAddr       netip.Prefix
+	EnableBroadcast bool
 
 	// libp2p
 	PrivateKey      *PrivateKey

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"net/netip"
 
 	"github.com/wlynxg/NetHive/core/protocol"
 )
@@ -24,6 +25,12 @@ func (e *Engine) RoutineTUNReader() {
 			e.log.Warnf("[RoutineTUNReader] drop packet, because %s", err)
 			continue
 		}
+
+		if (ip.Dst().IsLinkLocalMulticast() || ip.Dst().IsMulticast()) && !e.cfg.EnableBroadcast {
+			e.log.Debugf("discard broadcast packets: %s -> %s", ip.Src(), ip.Dst())
+			continue
+		}
+
 		payload := Payload{
 			Src:  ip.Src(),
 			Dst:  ip.Dst(),
@@ -62,6 +69,30 @@ func (e *Engine) RoutineRouteTableWriter() {
 
 	for payload = range e.devReader {
 		var conn PacketChan
+
+		if (payload.Dst.IsLinkLocalMulticast() || payload.Dst.IsMulticast()) && e.cfg.EnableBroadcast {
+			e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
+				if c, ok := e.routeTable.id.Load(key); ok {
+					conn = c
+				} else {
+					conn = make(PacketChan, ChanSize)
+					e.routeTable.id.Store(key, conn)
+					e.routeTable.addr.Store(value.Addr(), conn)
+					go func() {
+						defer e.routeTable.id.Delete(key)
+						defer e.routeTable.addr.Delete(value.Addr())
+						e.addConn(conn, key)
+					}()
+				}
+				select {
+				case conn <- payload:
+				default:
+					e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
+				}
+				return true
+			})
+			continue
+		}
 
 		e.log.Debugf("%s -> %s", payload.Src, payload.Dst)
 		c, ok := e.routeTable.addr.Load(payload.Dst)

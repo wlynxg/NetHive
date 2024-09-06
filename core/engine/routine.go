@@ -55,8 +55,8 @@ func (e *Engine) RoutineTUNWriter() {
 	for payload = range e.devWriter {
 		_, err = e.device.Write(payload.Data)
 		if err != nil {
-			e.log.Error(e.ctx, fmt.Errorf("[RoutineTUNWriter]: %s", err))
-			return
+			e.log.Errorf("[RoutineTUNWriter]: %s", err)
+			e.log.Errorf("[err packet]: %v", payload.Data)
 		}
 	}
 }
@@ -94,7 +94,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 			continue
 		}
 
-		e.log.Debugf("%s -> %s", payload.Src, payload.Dst)
+		//e.log.Debugf("%s -> %s", payload.Src, payload.Dst)
 		c, ok := e.routeTable.addr.Load(payload.Dst)
 		if ok {
 			conn = c

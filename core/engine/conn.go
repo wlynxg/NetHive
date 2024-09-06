@@ -3,11 +3,11 @@ package engine
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/netip"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-msgio"
 	"github.com/mr-tron/base58/base58"
 )
 
@@ -64,7 +64,7 @@ func (e *Engine) addConnByID(id string) (PacketChan, error) {
 }
 
 func (e *Engine) addConn(peerChan PacketChan, id string) {
-	dev := &devWrapper{w: e.devWriter, r: peerChan}
+	//dev := &devWrapper{w: e.devWriter, r: peerChan}
 	e.log.Infof("start find peer %s", id)
 
 	var (
@@ -99,16 +99,50 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 	e.log.Infof("successfully connect [%s] by %s", id, stream.Conn().RemoteMultiaddr())
 	defer stream.Close()
 
+	mr := msgio.NewVarintReaderSize(stream, network.MessageSizeMax)
+	mw := msgio.NewVarintWriter(stream)
+
+	peerChan, ok := e.routeTable.id.Load(id)
+	if !ok {
+		return
+	}
+
 	go func() {
-		defer stream.Close()
-		_, err := io.Copy(stream, dev)
-		if err != nil && err != io.EOF {
-			e.log.Errorf("Peer [%s] stream write error: %s", id, err)
+		for {
+			msg, err := mr.ReadMsg()
+			if err != nil {
+				e.log.Errorf("Peer [%s] read msg error: %s", id, err)
+				return
+			}
+
+			buff := make([]byte, len(msg))
+			copy(buff, msg)
+			mr.ReleaseMsg(msg)
+			e.devWriter <- Payload{Data: buff}
 		}
 	}()
 
-	_, err = io.Copy(dev, stream)
-	if err != nil && err != io.EOF {
-		e.log.Errorf("Peer [%s] stream read error: %s", id, err)
+	for {
+		select {
+		case payload := <-peerChan:
+			err := mw.WriteMsg(payload.Data)
+			if err != nil {
+				e.log.Errorf("Peer [%s] write msg error: %s", id, err)
+				return
+			}
+		}
 	}
+
+	//go func() {
+	//	defer stream.Close()
+	//	_, err := io.Copy(stream, dev)
+	//	if err != nil && err != io.EOF {
+	//		e.log.Errorf("Peer [%s] stream write error: %s", id, err)
+	//	}
+	//}()
+	//
+	//_, err = io.Copy(dev, stream)
+	//if err != nil && err != io.EOF {
+	//	e.log.Errorf("Peer [%s] stream read error: %s", id, err)
+	//}
 }

@@ -2,9 +2,9 @@ package engine
 
 import (
 	"context"
-	"io"
 	"net/netip"
 
+	"github.com/libp2p/go-msgio"
 	"github.com/wlynxg/NetHive/core/route"
 
 	"github.com/wlynxg/NetHive/core/config"
@@ -23,7 +23,7 @@ import (
 
 const (
 	BuffSize          = 1500
-	ChanSize          = 1500
+	ChanSize          = 15000
 	VPNStreamProtocol = "/NetHive/vpn"
 )
 
@@ -204,21 +204,37 @@ func (e *Engine) VPNHandler(stream network.Stream) {
 		return
 	}
 
-	peerChan := make(PacketChan, ChanSize)
-	e.routeTable.id.Store(id, peerChan)
-	defer e.routeTable.id.Delete(id)
+	mr := msgio.NewVarintReaderSize(stream, network.MessageSizeMax)
+	mw := msgio.NewVarintWriter(stream)
 
-	dev := &devWrapper{w: e.devWriter, r: peerChan}
+	peerChan, ok := e.routeTable.id.Load(id)
+	if !ok {
+		return
+	}
+
 	go func() {
-		defer stream.Close()
-		_, err := io.Copy(stream, dev)
-		if err != nil && err != io.EOF {
-			e.log.Errorf("Peer [%s] stream write error: %s", id, err)
+		for {
+			msg, err := mr.ReadMsg()
+			if err != nil {
+				e.log.Errorf("Peer [%s] read msg error: %s", id, err)
+				return
+			}
+
+			buff := make([]byte, len(msg))
+			copy(buff, msg)
+			mr.ReleaseMsg(msg)
+			e.devWriter <- Payload{Data: buff}
 		}
 	}()
 
-	_, err := io.Copy(dev, stream)
-	if err != nil && err != io.EOF {
-		e.log.Errorf("Peer [%s] stream read error: %s", id, err)
+	for {
+		select {
+		case payload := <-peerChan:
+			err := mw.WriteMsg(payload.Data)
+			if err != nil {
+				e.log.Errorf("Peer [%s] write msg error: %s", id, err)
+				return
+			}
+		}
 	}
 }

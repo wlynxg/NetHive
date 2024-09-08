@@ -2,9 +2,8 @@ package engine
 
 import (
 	"fmt"
-	"net/netip"
-
 	"github.com/wlynxg/NetHive/core/protocol"
+	"net/netip"
 )
 
 // RoutineTUNReader loop to read packets from TUN
@@ -65,17 +64,16 @@ func (e *Engine) RoutineTUNWriter() {
 func (e *Engine) RoutineRouteTableWriter() {
 	var (
 		payload Payload
+		ok      bool
+		conn    PacketChan
 	)
 
 	for payload = range e.devReader {
-		var conn PacketChan
-
 		if (payload.Dst.IsLinkLocalMulticast() || payload.Dst.IsMulticast()) && e.cfg.EnableBroadcast {
 			e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
-				if c, ok := e.routeTable.id.Load(key); ok {
-					conn = c
-				} else {
-					conn = make(PacketChan, ChanSize)
+				conn, ok := e.routeTable.id.Load(key)
+				if !ok {
+					conn := make(PacketChan, ChanSize)
 					e.routeTable.id.Store(key, conn)
 					e.routeTable.addr.Store(value.Addr(), conn)
 					go func() {
@@ -83,6 +81,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 						defer e.routeTable.addr.Delete(value.Addr())
 						e.addConn(conn, key)
 					}()
+
 				}
 				select {
 				case conn <- payload:
@@ -94,11 +93,8 @@ func (e *Engine) RoutineRouteTableWriter() {
 			continue
 		}
 
-		//e.log.Debugf("%s -> %s", payload.Src, payload.Dst)
-		c, ok := e.routeTable.addr.Load(payload.Dst)
-		if ok {
-			conn = c
-		} else {
+		conn, ok = e.routeTable.addr.Load(payload.Dst)
+		if !ok {
 			c, err := e.addConnByDst(payload.Dst)
 			if err != nil {
 				e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because %s", payload.Dst, err)

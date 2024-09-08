@@ -64,7 +64,6 @@ func (e *Engine) addConnByID(id string) (PacketChan, error) {
 }
 
 func (e *Engine) addConn(peerChan PacketChan, id string) {
-	//dev := &devWrapper{w: e.devWriter, r: peerChan}
 	e.log.Infof("start find peer %s", id)
 
 	var (
@@ -102,11 +101,6 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 	mr := msgio.NewVarintReaderSize(stream, network.MessageSizeMax)
 	mw := msgio.NewVarintWriter(stream)
 
-	peerChan, ok := e.routeTable.id.Load(id)
-	if !ok {
-		return
-	}
-
 	go func() {
 		for {
 			msg, err := mr.ReadMsg()
@@ -132,17 +126,4 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 			}
 		}
 	}
-
-	//go func() {
-	//	defer stream.Close()
-	//	_, err := io.Copy(stream, dev)
-	//	if err != nil && err != io.EOF {
-	//		e.log.Errorf("Peer [%s] stream write error: %s", id, err)
-	//	}
-	//}()
-	//
-	//_, err = io.Copy(dev, stream)
-	//if err != nil && err != io.EOF {
-	//	e.log.Errorf("Peer [%s] stream read error: %s", id, err)
-	//}
 }

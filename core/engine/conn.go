@@ -14,10 +14,10 @@ import (
 func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 	e.log.Debugf("Try to connect to the corresponding node of %s", dst)
 
-	var conn PacketChan
 	if c, ok := e.routeTable.addr.Load(dst); ok {
-		conn = c
+		return c, nil
 	} else {
+		var conn PacketChan
 		e.routeTable.m.Range(func(key string, value netip.Prefix) bool {
 			if value.Addr().Compare(dst) != 0 {
 				return true
@@ -28,6 +28,7 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 			} else {
 				conn = make(PacketChan, ChanSize)
 				e.routeTable.addr.Store(dst, conn)
+				e.routeTable.id.Store(key, conn)
 				go func() {
 					defer e.routeTable.id.Delete(key)
 					defer e.routeTable.addr.Delete(dst)
@@ -36,10 +37,9 @@ func (e *Engine) addConnByDst(dst netip.Addr) (PacketChan, error) {
 			}
 			return false
 		})
-	}
-
-	if conn != nil {
-		return conn, nil
+		if conn != nil {
+			return conn, nil
+		}
 	}
 
 	return nil, errors.New(fmt.Sprintf("the routing rule corresponding to %s was not found", dst.String()))

@@ -3,7 +3,18 @@ package protocol
 import (
 	"errors"
 	"net/netip"
+	"sync"
 )
+
+var (
+	ErrInvalidIPPacket = errors.New("invalid IP packet")
+)
+
+var ipPacketPool = sync.Pool{
+	New: func() interface{} {
+		return &IPPacket{}
+	},
+}
 
 type IP interface {
 	Version() int
@@ -11,92 +22,80 @@ type IP interface {
 	Dst() netip.Addr
 }
 
+type IPPacket struct {
+	version int
+	src     netip.Addr
+	dst     netip.Addr
+}
+
+func (ip *IPPacket) Version() int    { return ip.version }
+func (ip *IPPacket) Src() netip.Addr { return ip.src }
+func (ip *IPPacket) Dst() netip.Addr { return ip.dst }
+
 func ParseIP(buff []byte) (IP, error) {
-	switch buff[0] >> 4 {
+	if len(buff) < 20 {
+		return nil, ErrInvalidIPPacket
+	}
+
+	version := int(buff[0] >> 4)
+	ip := ipPacketPool.Get().(*IPPacket)
+	ip.version = version
+
+	var err error
+	switch version {
 	case 4:
-		return ParseIPv4(buff)
+		err = parseIPv4(ip, buff)
 	case 6:
-		return ParseIPv6(buff)
+		err = parseIPv6(ip, buff)
 	default:
-		return nil, errors.New("invalid IP packet")
-	}
-}
-
-func ParseIPv4(buff []byte) (*IPv4, error) {
-	headerLength := (buff[0] & 0xF0) * 5
-
-	src, ok := netip.AddrFromSlice(buff[12:16])
-	if !ok || !src.IsValid() {
-		return nil, errors.New("invalid IP packet")
+		ipPacketPool.Put(ip)
+		return nil, ErrInvalidIPPacket
 	}
 
-	dst, ok := netip.AddrFromSlice(buff[16:20])
-	if !ok || !dst.IsValid() {
-		return nil, errors.New("invalid IP packet")
+	if err != nil {
+		ipPacketPool.Put(ip)
+		return nil, err
 	}
 
-	return &IPv4{
-		headerLength: int(headerLength),
-		src:          src,
-		dst:          dst,
-	}, nil
+	return ip, nil
 }
 
-type IPv4 struct {
-	version      int
-	headerLength int
-	length       int
-	src          netip.Addr
-	dst          netip.Addr
-}
-
-func (i *IPv4) Version() int {
-	return i.version
-}
-
-func (i *IPv4) Src() netip.Addr {
-	return i.src
-}
-
-func (i *IPv4) Dst() netip.Addr {
-	return i.dst
-}
-
-func ParseIPv6(buff []byte) (*IPv6, error) {
-	headerLength := (buff[0] & 0xF0) * 5
-
-	src, ok := netip.AddrFromSlice(buff[8:24])
-	if !ok || !src.IsValid() {
-		return nil, errors.New("invalid IP packet")
+func parseIPv4(ip *IPPacket, buff []byte) error {
+	var ok bool
+	ip.src, ok = netip.AddrFromSlice(buff[12:16])
+	if !ok || !ip.src.IsValid() {
+		return ErrInvalidIPPacket
 	}
 
-	dst, ok := netip.AddrFromSlice(buff[24:40])
-	if !ok || !dst.IsValid() {
-		return nil, errors.New("invalid IP packet")
+	ip.dst, ok = netip.AddrFromSlice(buff[16:20])
+	if !ok || !ip.dst.IsValid() {
+		return ErrInvalidIPPacket
 	}
-	return &IPv6{
-		headerLength: int(headerLength),
-		src:          src,
-		dst:          dst,
-	}, nil
+
+	return nil
 }
 
-type IPv6 struct {
-	version      int
-	headerLength int
-	length       int
-	src          netip.Addr
-	dst          netip.Addr
+func parseIPv6(ip *IPPacket, buff []byte) error {
+	if len(buff) < 40 {
+		return ErrInvalidIPPacket
+	}
+
+	var ok bool
+	ip.src, ok = netip.AddrFromSlice(buff[8:24])
+	if !ok || !ip.src.IsValid() {
+		return ErrInvalidIPPacket
+	}
+
+	ip.dst, ok = netip.AddrFromSlice(buff[24:40])
+	if !ok || !ip.dst.IsValid() {
+		return ErrInvalidIPPacket
+	}
+
+	return nil
 }
 
-func (i *IPv6) Version() int {
-	return i.version
-}
-
-func (i *IPv6) Src() netip.Addr {
-	return i.src
-}
-
-func (i *IPv6) Dst() netip.Addr {
-	return i.dst
+func ReleaseIP(ip IP) {
+	if ipPacket, ok := ip.(*IPPacket); ok {
+		ipPacketPool.Put(ipPacket)
+	}
 }

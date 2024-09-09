@@ -52,7 +52,7 @@ func (e *Engine) addConnByID(id string) (PacketChan, error) {
 		return conn, nil
 	}
 
-	peerChan := make(chan Payload, ChanSize)
+	peerChan := make(PacketChan, ChanSize)
 	e.routeTable.id.Store(id, peerChan)
 
 	go func() {
@@ -109,10 +109,11 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 				return
 			}
 
-			buff := make([]byte, len(msg))
-			copy(buff, msg)
+			payload := e.payloadPool.Get()
+			payload.Data = e.bufferPool.Get(len(msg))
+			copy(payload.Data, msg)
 			mr.ReleaseMsg(msg)
-			e.devWriter <- Payload{Data: buff}
+			e.devWriter <- payload
 		}
 	}()
 
@@ -120,6 +121,8 @@ func (e *Engine) addConn(peerChan PacketChan, id string) {
 		select {
 		case payload := <-peerChan:
 			err := mw.WriteMsg(payload.Data)
+			e.bufferPool.Put(payload.Data)
+			e.payloadPool.Put(payload)
 			if err != nil {
 				e.log.Errorf("Peer [%s] write msg error: %s", id, err)
 				return

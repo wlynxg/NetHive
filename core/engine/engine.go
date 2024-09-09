@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/netip"
 
+	pool "github.com/libp2p/go-buffer-pool"
 	"github.com/libp2p/go-msgio"
 	"github.com/wlynxg/NetHive/core/route"
+	"github.com/wlynxg/NetHive/pkgs/xpool"
 
 	"github.com/wlynxg/NetHive/core/config"
 	"github.com/wlynxg/NetHive/core/device"
@@ -27,7 +29,7 @@ const (
 	VPNStreamProtocol = "/NetHive/vpn"
 )
 
-type PacketChan chan Payload
+type PacketChan chan *Payload
 
 type Engine struct {
 	log    *mlog.Logger
@@ -47,6 +49,9 @@ type Engine struct {
 	devWriter PacketChan
 	devReader PacketChan
 	errChan   chan error
+
+	bufferPool  *pool.BufferPool
+	payloadPool xpool.Pool[*Payload]
 
 	routeTable struct {
 		m    xsync.Map[string, netip.Prefix]
@@ -68,6 +73,11 @@ func Run(ctx context.Context, cfg *config.Config) (*Engine, error) {
 	e.ctx, e.cancel = context.WithCancel(ctx)
 	e.devWriter = make(PacketChan, ChanSize)
 	e.devReader = make(PacketChan, ChanSize)
+
+	e.bufferPool = &pool.BufferPool{}
+	e.payloadPool = xpool.New[*Payload](func() *Payload {
+		return &Payload{}
+	})
 
 	pk, err := cfg.PrivateKey.PrivKey()
 	if err != nil {
@@ -220,10 +230,11 @@ func (e *Engine) VPNHandler(stream network.Stream) {
 				return
 			}
 
-			buff := make([]byte, len(msg))
-			copy(buff, msg)
+			payload := e.payloadPool.Get()
+			payload.Data = e.bufferPool.Get(len(msg))
+			copy(payload.Data, msg)
 			mr.ReleaseMsg(msg)
-			e.devWriter <- Payload{Data: buff}
+			e.devWriter <- payload
 		}
 	}()
 
@@ -231,9 +242,11 @@ func (e *Engine) VPNHandler(stream network.Stream) {
 		select {
 		case payload := <-peerChan:
 			err := mw.WriteMsg(payload.Data)
+			e.bufferPool.Put(payload.Data)
+			e.payloadPool.Put(payload)
 			if err != nil {
 				e.log.Errorf("Peer [%s] write msg error: %s", id, err)
-				return
+				continue
 			}
 		}
 	}

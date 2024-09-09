@@ -1,24 +1,27 @@
 package engine
 
 import (
-	"fmt"
-	"github.com/wlynxg/NetHive/core/protocol"
 	"net/netip"
+
+	"github.com/wlynxg/NetHive/core/protocol"
 )
 
 // RoutineTUNReader loop to read packets from TUN
 func (e *Engine) RoutineTUNReader() {
 	var (
-		buff = make([]byte, BuffSize)
+		buff []byte
 		err  error
 		n    int
 	)
 	for {
+		buff = e.bufferPool.Get(BuffSize)
 		n, err = e.device.Read(buff)
 		if err != nil {
-			e.errChan <- fmt.Errorf("[RoutineTUNReader]: %s", err)
-			return
+			e.bufferPool.Put(buff)
+			e.log.Warnf("[RoutineTUNReader]: %s", err)
+			continue
 		}
+
 		ip, err := protocol.ParseIP(buff[:n])
 		if err != nil {
 			e.log.Warnf("[RoutineTUNReader] drop packet, because %s", err)
@@ -30,16 +33,16 @@ func (e *Engine) RoutineTUNReader() {
 			continue
 		}
 
-		payload := Payload{
-			Src:  ip.Src(),
-			Dst:  ip.Dst(),
-			Data: make([]byte, n),
-		}
-		copy(payload.Data, buff[:n])
+		payload := e.payloadPool.Get()
+		payload.Src = ip.Src()
+		payload.Dst = ip.Dst()
+		payload.Data = buff[:n]
 		select {
 		case e.devReader <- payload:
 		default:
 			e.log.Warnf("[RoutineTUNReader] drop packet: %s, because the sending queue is already full", payload.Dst)
+			e.bufferPool.Put(payload.Data)
+			e.payloadPool.Put(payload)
 		}
 	}
 }
@@ -47,12 +50,15 @@ func (e *Engine) RoutineTUNReader() {
 // RoutineTUNWriter loop writing packets to TUN
 func (e *Engine) RoutineTUNWriter() {
 	var (
-		payload Payload
+		payload *Payload
 		err     error
 	)
 
 	for payload = range e.devWriter {
 		_, err = e.device.Write(payload.Data)
+		e.bufferPool.Put(payload.Data)
+		e.payloadPool.Put(payload)
+
 		if err != nil {
 			e.log.Errorf("[RoutineTUNWriter]: %s", err)
 			e.log.Errorf("[err packet]: %v", payload.Data)
@@ -63,7 +69,7 @@ func (e *Engine) RoutineTUNWriter() {
 // RoutineRouteTableWriter loop sending the data packet to the corresponding channel according to the routing table
 func (e *Engine) RoutineRouteTableWriter() {
 	var (
-		payload Payload
+		payload *Payload
 		ok      bool
 		conn    PacketChan
 	)
@@ -81,7 +87,6 @@ func (e *Engine) RoutineRouteTableWriter() {
 						defer e.routeTable.addr.Delete(value.Addr())
 						e.addConn(conn, key)
 					}()
-
 				}
 				select {
 				case conn <- payload:
@@ -111,6 +116,8 @@ func (e *Engine) RoutineRouteTableWriter() {
 		case conn <- payload:
 		default:
 			e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
+			e.bufferPool.Put(payload.Data)
+			e.payloadPool.Put(payload)
 		}
 	}
 }

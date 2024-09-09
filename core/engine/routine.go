@@ -34,8 +34,9 @@ func (e *Engine) RoutineTUNReader() {
 		}
 
 		payload := e.payloadPool.Get()
-		payload.Src = ip.Src()
+		//payload.Src = ip.Src()
 		payload.Dst = ip.Dst()
+		protocol.ReleaseIP(ip)
 		payload.Data = buff[:n]
 		select {
 		case e.devReader <- payload:
@@ -118,6 +119,7 @@ func (e *Engine) RoutineRouteTableWriter() {
 			e.log.Warnf("[RoutineRouteTableWriter] drop packet: %s, because the sending queue is already full", payload.Dst)
 			e.bufferPool.Put(payload.Data)
 			e.payloadPool.Put(payload)
+
 		}
 	}
 }

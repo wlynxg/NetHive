@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/wlynxg/NetHive/core/config"
 	"github.com/wlynxg/NetHive/core/engine"
@@ -22,6 +24,10 @@ func parse() *args {
 
 func main() {
 	params := parse()
+
+	go func() {
+		http.ListenAndServe(":6060", nil)
+	}()
 
 	cfg, err := config.Load(params.config)
 	if err != nil {

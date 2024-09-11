@@ -193,9 +193,11 @@ func CreateTUN(name string, mtu int) (Device, error) {
 		return nil, err
 	}
 
-	// unix.IFF_TUN: TUN device
-	// unix.IFF_NO_PI: no need to provide package information
-	ifreq.SetUint16(unix.IFF_TUN | unix.IFF_NO_PI)
+	// unix.IFF_TUN: TUN device (no Ethernet headers)
+	// unix.IFF_NO_PI: Do not provide packet information
+	// unix.IFF_MULTI_QUEUE: Create a queue of multiqueue device
+	ifreq.SetUint16(unix.IFF_TUN | unix.IFF_NO_PI | unix.IFF_MULTI_QUEUE)
+	//ifreq.SetUint16(unix.IFF_TUN | unix.IFF_NO_PI)
 	err = unix.IoctlIfreq(tfd, unix.TUNSETIFF, ifreq)
 	if err != nil {
 		return nil, err

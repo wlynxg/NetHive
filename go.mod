@@ -6,9 +6,11 @@ toolchain go1.22.4
 
 require (
 	github.com/gogf/gf/v2 v2.7.0
+	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-cidranger v1.1.0
 	github.com/libp2p/go-libp2p v0.36.3
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
+	github.com/libp2p/go-msgio v0.3.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/pkg/errors v0.9.1
 	go.uber.org/zap v1.27.0
@@ -56,13 +58,11 @@ require (
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/koron/go-ssdp v0.0.4 // indirect
-	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
 	github.com/libp2p/go-libp2p-kbucket v0.6.3 // indirect
 	github.com/libp2p/go-libp2p-record v0.2.0 // indirect
 	github.com/libp2p/go-libp2p-routing-helpers v0.7.2 // indirect
-	github.com/libp2p/go-msgio v0.3.0 // indirect
 	github.com/libp2p/go-nat v0.2.0 // indirect
 	github.com/libp2p/go-netroute v0.2.1 // indirect
 	github.com/libp2p/go-reuseport v0.4.0 // indirect
